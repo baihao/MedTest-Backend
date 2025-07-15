@@ -3,6 +3,7 @@ const { User } = require('./user');
 const { Workspace } = require('./workspace');
 const { LabReport } = require('./labreport');
 const { LabReportItem } = require('./labreportitem');
+const { OcrData } = require('./ocrdata');
 const { logger } = require('../config/logger');
 
 class ModelManager {
@@ -15,6 +16,7 @@ class ModelManager {
             await Workspace.init();
             await LabReport.init();
             await LabReportItem.init();
+            await OcrData.init();
             
             // 定义关联关系
             User.model.hasMany(Workspace.model, {
@@ -53,6 +55,19 @@ class ModelManager {
             LabReportItem.model.belongsTo(LabReport.model, {
                 foreignKey: 'labReportId',
                 as: 'labReport'
+            });
+
+            // 工作空间与OCR数据的关联关系
+            Workspace.model.hasMany(OcrData.model, {
+                foreignKey: 'workspaceId',
+                as: 'ocrData',
+                onDelete: 'CASCADE', // 工作空间删除时级联删除OCR数据
+                onUpdate: 'CASCADE'
+            });
+            
+            OcrData.model.belongsTo(Workspace.model, {
+                foreignKey: 'workspaceId',
+                as: 'workspace'
             });
             
             // 同步数据库结构
