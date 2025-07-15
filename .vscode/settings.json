@@ -1,0 +1,34 @@
+{
+    "jest.autoRun": {
+        "watch": false,
+        "onSave": "test-file"
+    },
+    "jest.showCoverageOnLoad": true,
+    "jest.autoEnable": true,
+    "jest.testExplorer": {
+        "enabled": true,
+        "showInlineError": true
+    },
+    "debug.console.fontSize": 12,
+    "debug.console.lineHeight": 18,
+    "debug.internalConsoleOptions": "neverOpen",
+    "debug.openDebug": "openOnDebugBreak",
+    "debug.showBreakpointsInOverviewRuler": true,
+    "debug.showInlineBreakpointCandidates": true,
+    "files.exclude": {
+        "**/node_modules": true,
+        "**/database.db": false
+    },
+    "search.exclude": {
+        "**/node_modules": true,
+        "**/database.db": true
+    },
+    "typescript.preferences.includePackageJsonAutoImports": "on",
+    "editor.codeActionsOnSave": {
+        "source.fixAll.eslint": "explicit"
+    },
+    "files.associations": {
+        "*.test.js": "javascript",
+        "*.spec.js": "javascript"
+    }
+} 
