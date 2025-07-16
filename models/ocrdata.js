@@ -40,7 +40,12 @@ class OcrData {
             workspaceId: {
                 type: DataTypes.INTEGER,
                 allowNull: false,
-                comment: '工作空间ID'
+                references: {
+                    model: 'workspaces',
+                    key: 'id'
+                },
+                onUpdate: 'CASCADE',
+                onDelete: 'CASCADE'
             }
         }, {
             tableName: 'ocr_data',

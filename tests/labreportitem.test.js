@@ -27,7 +27,7 @@ describe('LabReportItem Model Tests', () => {
         });
 
         // 创建测试检验报告
-        testLabReport = await LabReport.create({
+        testLabReport = await LabReport.createWithItems({
             patient: '张三',
             reportTime: new Date('2024-01-15'),
             doctor: '李医生',

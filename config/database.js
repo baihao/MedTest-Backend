@@ -18,10 +18,15 @@ const sequelize = new Sequelize({
     }
 });
 
+sequelize.afterConnect(async (conn) => {
+    await conn.run('PRAGMA foreign_keys = ON');
+});
+
 // 测试数据库连接
 async function testConnection() {
     try {
         await sequelize.authenticate();
+        await sequelize.query('PRAGMA foreign_keys = ON');  // 启用外键约束
         logger.info('数据库连接成功');
     } catch (error) {
         logger.error('连接验证失败:', error.message);

@@ -79,6 +79,8 @@ class LabReport {
                     model: 'workspaces',
                     key: 'id'
                 },
+                onUpdate: 'CASCADE',
+                onDelete: 'CASCADE',
                 validate: {
                     isInt: true,
                     min: 1

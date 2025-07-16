@@ -416,4 +416,28 @@ describe('OcrData Model', () => {
             }
         });
     });
+
+    describe('删除workspace时，删除关联的ocrdata', () => {
+        test('应该删除关联的ocrdata', async () => {
+            // 创建OCR数据
+            const ocrData = await OcrData.create(generateUniqueOcrData());
+            
+            // 验证OCR数据已创建
+            const foundOcrData = await OcrData.findByWorkspaceId(testWorkspace.id);
+            expect(foundOcrData).toHaveLength(1);
+            expect(foundOcrData[0].id).toBe(ocrData.id);
+            
+            // 删除工作空间
+            const deleteResult = await Workspace.delete(testWorkspace.id);
+            expect(deleteResult).toBe(true);
+            
+            // 验证OCR数据已被级联删除 - 修复期望值
+            const remainingOcrData = await OcrData.findByWorkspaceId(testWorkspace.id);
+            expect(remainingOcrData).toHaveLength(0); // 改为期望空数组，不是 null
+            
+            // 验证OCR数据确实不存在
+            const foundById = await OcrData.findById(ocrData.id);
+            expect(foundById).toBeNull();
+        });
+    });
 }); 

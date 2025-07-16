@@ -43,6 +43,8 @@ class Workspace {
                     model: 'users',
                     key: 'id'
                 },
+                onUpdate: 'CASCADE',
+                onDelete: 'CASCADE',
                 validate: {
                     isInt: true,
                     min: 1

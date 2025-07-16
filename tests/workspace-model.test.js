@@ -11,6 +11,20 @@ describe('Workspace Model', () => {
         testUser = await User.create(generateUniqueUsername('testuser'), 'password');
     });
 
+    afterEach(async () => {
+        // 清理所有工作空间
+        const allWorkspaces = await Workspace.model.findAll();
+        for (const workspace of allWorkspaces) {
+            await Workspace.delete(workspace.id);
+        }
+        
+        // 清理所有用户
+        const allUsers = await User.model.findAll();
+        for (const user of allUsers) {
+            await User.delete(user.id);
+        }
+    });
+
     describe('Workspace.create()', () => {
         it('应该成功创建工作空间', async () => {
             const workspaceData = {
@@ -208,13 +222,21 @@ describe('Workspace Model', () => {
         });
 
         it('应该再删除用户的情况下删除掉用户的工作空间', async () => {
+            // 创建一个简单的工作空间
             const workspace = await Workspace.create({
                 name: generateUniqueWorkspaceName('删除用户测试工作空间'),
                 userId: testUser.id
             });
             
-            await User.delete(testUser.id);
+            // 验证工作空间存在
+            const foundWorkspace = await Workspace.findById(workspace.id);
+            expect(foundWorkspace).toBeDefined();
+            
+            // 删除用户，应该级联删除工作空间
+            const deleteResult = await User.delete(testUser.id);
+            expect(deleteResult).toBe(true);
 
+            // 验证工作空间已被级联删除
             const deletedWorkspace = await Workspace.findByUserId(testUser.id);
             expect(deletedWorkspace).toHaveLength(0); 
         });

@@ -39,6 +39,8 @@ class LabReportItem {
                     model: 'lab_reports',
                     key: 'id'
                 },
+                onUpdate: 'CASCADE',
+                onDelete: 'CASCADE',
                 validate: {
                     isInt: true,
                     min: 1
