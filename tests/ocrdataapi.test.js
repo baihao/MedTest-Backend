@@ -89,10 +89,8 @@ describe('OCR Data API Router Tests', () => {
             expect(response.body.data.workspaceId).toBe(testWorkspace.id);
             expect(response.body.data.workspaceName).toBe(testWorkspace.name);
             expect(response.body.data.ocrData).toHaveLength(2);
-            expect(response.body.data.ocrData[0].reportImage).toBe('path/to/image1.jpg');
-            expect(response.body.data.ocrData[0].ocrPrimitive).toBe('OCR识别结果1');
-            expect(response.body.data.ocrData[1].reportImage).toBe('path/to/image2.jpg');
-            expect(response.body.data.ocrData[1].ocrPrimitive).toBe('OCR识别结果2');
+            const reportImages = response.body.data.ocrData.map(item => item.reportImage);
+            expect(reportImages).toEqual(expect.arrayContaining(['path/to/image1.jpg', 'path/to/image2.jpg']));
         });
 
         it('应该拒绝未认证的请求', async () => {
@@ -285,7 +283,6 @@ describe('OCR Data API Router Tests', () => {
             expect(response.body.success).toBe(true);
             expect(response.body.data.id).toBe(testOcrData.id);
             expect(response.body.data.reportImage).toBe('path/to/test.jpg');
-            expect(response.body.data.ocrPrimitive).toBe('测试OCR结果');
             expect(response.body.data.workspaceId).toBe(testWorkspace.id);
             expect(response.body.data.workspaceName).toBe(testWorkspace.name);
         });

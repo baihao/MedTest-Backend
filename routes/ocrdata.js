@@ -38,7 +38,6 @@ router.use(detailedLogger);
  *       {
  *         "id": 1,
  *         "reportImage": "path/to/image1.jpg",
- *         "ocrPrimitive": "OCR识别结果1",
  *         "workspaceId": 1,
  *         "createdAt": "2024-01-01T00:00:00.000Z",
  *         "updatedAt": "2024-01-01T00:00:00.000Z"
@@ -121,7 +120,6 @@ router.post('/batch/:workspaceId', authenticateJWT, async (req, res, next) => {
                 ocrData: createdOcrData.map(ocrData => ({
                     id: ocrData.id,
                     reportImage: ocrData.reportImage,
-                    ocrPrimitive: ocrData.ocrPrimitive,
                     workspaceId: ocrData.workspaceId,
                     createdAt: ocrData.createdAt,
                     updatedAt: ocrData.updatedAt
@@ -186,7 +184,6 @@ router.get('/workspace/:workspaceId', authenticateJWT, async (req, res, next) =>
                 ocrData: ocrDataList.map(ocrData => ({
                     id: ocrData.id,
                     reportImage: ocrData.reportImage,
-                    ocrPrimitive: ocrData.ocrPrimitive,
                     workspaceId: ocrData.workspaceId,
                     createdAt: ocrData.createdAt,
                     updatedAt: ocrData.updatedAt
@@ -239,7 +236,6 @@ router.get('/:id', authenticateJWT, async (req, res, next) => {
             data: {
                 id: ocrData.id,
                 reportImage: ocrData.reportImage,
-                ocrPrimitive: ocrData.ocrPrimitive,
                 workspaceId: ocrData.workspaceId,
                 workspaceName: workspace.name,
                 createdAt: ocrData.createdAt,
