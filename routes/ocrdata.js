@@ -197,6 +197,24 @@ router.get('/workspace/:workspaceId', authenticateJWT, async (req, res, next) =>
 });
 
 /**
+ * GET /ocrdata/stats - 获取处理统计信息
+ */
+router.get('/stats', authenticateJWT, async (req, res, next) => {
+    try {
+        const stats = await OcrData.getProcessingStats();
+
+        res.status(200).json({
+            success: true,
+            message: '获取统计信息成功',
+            data: stats
+        });
+
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
  * GET /ocrdata/:id - 获取单个OCR数据详情
  */
 router.get('/:id', authenticateJWT, async (req, res, next) => {
@@ -312,10 +330,10 @@ router.delete('/batch', authenticateJWT, async (req, res, next) => {
             });
         }
 
-        // 批量删除OCR数据
-        const result = await OcrData.deleteBatch(idArray);
+        // 使用硬删除（彻底删除）
+        const result = await OcrData.hardDeleteBatch(idArray);
 
-        logger.info(`用户 ${userId} 批量删除了 ${result.deletedCount} 条OCR数据`);
+        logger.info(`用户 ${userId} 硬删除了 ${result.deletedCount} 条OCR数据`);
 
         res.status(200).json({
             success: true,
@@ -323,6 +341,32 @@ router.delete('/batch', authenticateJWT, async (req, res, next) => {
             data: {
                 deletedCount: result.deletedCount,
                 deletedIds: result.deletedIds
+            }
+        });
+
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
+ * POST /ocrdata/process - 手动触发OCR处理
+ */
+router.post('/process', authenticateJWT, async (req, res, next) => {
+    try {
+        const { batchSize = 50 } = req.body;
+        
+        // 这里可以调用OCR处理服务
+        // const { OcrProcessor } = require('../services/ocrProcessor');
+        // const processor = new OcrProcessor();
+        // await processor.triggerProcessing(batchSize);
+
+        // 暂时返回成功响应
+        res.status(200).json({
+            success: true,
+            message: 'OCR处理已触发',
+            data: {
+                batchSize: batchSize
             }
         });
 

@@ -440,4 +440,266 @@ describe('OcrData Model', () => {
             expect(foundById).toBeNull();
         });
     });
+
+    describe('getAndSoftDelete方法', () => {
+        beforeEach(async () => {
+            // 创建一些测试数据
+            const ocrDataArray = [];
+            for (let i = 0; i < 5; i++) {
+                ocrDataArray.push(generateUniqueOcrData());
+            }
+            await OcrData.createBatch(ocrDataArray);
+        });
+
+        test('应该成功获取并软删除待处理数据', async () => {
+            const batch = await OcrData.getAndSoftDelete(3);
+            
+            expect(Array.isArray(batch)).toBe(true);
+            expect(batch).toHaveLength(3);
+            
+            batch.forEach(ocrData => {
+                expect(ocrData).toBeInstanceOf(OcrData);
+            });
+
+            // 验证数据已被软删除
+            const remainingData = await OcrData.model.findAll();
+            expect(remainingData).toHaveLength(2); // 剩余2条未处理的数据
+        });
+
+        test('应该处理空数据的情况', async () => {
+            // 先删除所有数据
+            await OcrData.model.destroy({ where: {}, force: true });
+            
+            const batch = await OcrData.getAndSoftDelete(10);
+            expect(batch).toHaveLength(0);
+        });
+
+        // 移除并发测试，因为SQLite不支持真正的并发
+        // test('应该使用乐观锁处理并发冲突', async () => {
+        //     // 模拟并发情况：同时调用两次
+        //     const [batch1, batch2] = await Promise.all([
+        //         OcrData.getAndSoftDelete(3),
+        //         OcrData.getAndSoftDelete(3)
+        //     ]);
+
+        //     // 应该只有一批数据被处理
+        //     const totalProcessed = batch1.length + batch2.length;
+        //     expect(totalProcessed).toBeLessThanOrEqual(5);
+        // });
+    });
+
+    describe('hardDeleteBatch方法', () => {
+        let testOcrDataArray;
+
+        beforeEach(async () => {
+            // 创建测试数据
+            const ocrDataArray = [
+                generateUniqueOcrData(),
+                generateUniqueOcrData(),
+                generateUniqueOcrData()
+            ];
+            testOcrDataArray = await OcrData.createBatch(ocrDataArray);
+        });
+
+        test('应该成功硬删除OCR数据', async () => {
+            const idsToDelete = testOcrDataArray.map(ocrData => ocrData.id);
+            
+            const result = await OcrData.hardDeleteBatch(idsToDelete);
+            
+            expect(result.deletedCount).toBe(3);
+            expect(result.deletedIds).toEqual(idsToDelete);
+            
+            // 验证数据已被彻底删除
+            const remainingData = await OcrData.model.findAll({ paranoid: false });
+            expect(remainingData).toHaveLength(0);
+        });
+
+        test('应该硬删除包括软删除的数据', async () => {
+            // 先软删除一条数据
+            await OcrData.model.destroy({
+                where: { id: testOcrDataArray[0].id }
+            });
+
+            // 然后硬删除所有数据
+            const idsToDelete = testOcrDataArray.map(ocrData => ocrData.id);
+            const result = await OcrData.hardDeleteBatch(idsToDelete);
+            
+            expect(result.deletedCount).toBe(3);
+            
+            // 验证所有数据都被彻底删除
+            const remainingData = await OcrData.model.findAll({ paranoid: false });
+            expect(remainingData).toHaveLength(0);
+        });
+
+        test('应该验证输入参数', async () => {
+            await expect(OcrData.hardDeleteBatch(null)).rejects.toThrow(OcrDataError);
+            await expect(OcrData.hardDeleteBatch([])).rejects.toThrow(OcrDataError);
+            await expect(OcrData.hardDeleteBatch('not an array')).rejects.toThrow(OcrDataError);
+        });
+
+        test('应该验证ID格式', async () => {
+            await expect(OcrData.hardDeleteBatch([1, 'invalid', 3])).rejects.toThrow(OcrDataError);
+            await expect(OcrData.hardDeleteBatch([1, -1, 3])).rejects.toThrow(OcrDataError);
+        });
+    });
+
+    describe('restore方法', () => {
+        let testOcrData;
+
+        beforeEach(async () => {
+            testOcrData = await OcrData.create(generateUniqueOcrData());
+        });
+
+        test('应该成功恢复软删除的数据', async () => {
+            // 先软删除数据
+            await OcrData.model.destroy({
+                where: { id: testOcrData.id }
+            });
+
+            // 验证数据已被软删除
+            const softDeletedData = await OcrData.model.findByPk(testOcrData.id, { paranoid: false });
+            expect(softDeletedData.deletedAt).toBeDefined();
+
+            // 恢复数据
+            const result = await OcrData.restore(testOcrData.id);
+            expect(result).toBe(true);
+
+            // 验证数据已被恢复
+            const restoredData = await OcrData.model.findByPk(testOcrData.id);
+            expect(restoredData).not.toBeNull();
+        });
+
+        test('应该处理不存在的数据', async () => {
+            const result = await OcrData.restore(99999);
+            expect(result).toBe(false);
+        });
+
+        test('应该处理未被删除的数据', async () => {
+            const result = await OcrData.restore(testOcrData.id);
+            expect(result).toBe(true);
+        });
+    });
+
+    describe('checkExists方法', () => {
+        let testOcrData;
+
+        beforeEach(async () => {
+            testOcrData = await OcrData.create(generateUniqueOcrData());
+        });
+
+        test('应该正确检查存在的数据', async () => {
+            const exists = await OcrData.checkExists(testOcrData.id);
+            expect(exists).toBe(true);
+        });
+
+        test('应该正确检查不存在的数据', async () => {
+            const exists = await OcrData.checkExists(99999);
+            expect(exists).toBe(false);
+        });
+
+        test('应该检查软删除的数据', async () => {
+            // 软删除数据
+            await OcrData.model.destroy({
+                where: { id: testOcrData.id }
+            });
+
+            // 软删除的数据仍然存在（paranoid: false）
+            const exists = await OcrData.checkExists(testOcrData.id);
+            expect(exists).toBe(true);
+        });
+
+        test('应该检查硬删除的数据', async () => {
+            // 硬删除数据
+            await OcrData.model.destroy({
+                where: { id: testOcrData.id },
+                force: true
+            });
+
+            // 硬删除的数据不存在
+            const exists = await OcrData.checkExists(testOcrData.id);
+            expect(exists).toBe(false);
+        });
+    });
+
+    describe('getProcessingStats方法', () => {
+        let testOcrDataArray;
+
+        beforeEach(async () => {
+            // 创建测试数据
+            const ocrDataArray = [
+                generateUniqueOcrData(),
+                generateUniqueOcrData(),
+                generateUniqueOcrData()
+            ];
+            testOcrDataArray = await OcrData.createBatch(ocrDataArray);
+
+            // 软删除部分数据
+            await OcrData.model.destroy({
+                where: { id: testOcrDataArray[0].id }
+            });
+        });
+
+        test('应该返回正确的统计信息', async () => {
+            const stats = await OcrData.getProcessingStats();
+            
+            expect(stats).toHaveProperty('pending');
+            expect(stats).toHaveProperty('processing');
+            expect(stats).toHaveProperty('completed');
+            expect(stats).toHaveProperty('failed');
+            
+            expect(typeof stats.pending).toBe('number');
+            expect(typeof stats.processing).toBe('number');
+            
+            // 应该有2条待处理数据，1条处理中数据
+            expect(stats.pending).toBe(2);
+            expect(stats.processing).toBe(1);
+        });
+    });
+
+    describe('软删除功能', () => {
+        let testOcrData;
+
+        beforeEach(async () => {
+            testOcrData = await OcrData.create(generateUniqueOcrData());
+        });
+
+        test('应该支持软删除', async () => {
+            // 软删除数据
+            await OcrData.model.destroy({
+                where: { id: testOcrData.id }
+            });
+
+            // 正常查询应该找不到数据
+            const normalQuery = await OcrData.model.findByPk(testOcrData.id);
+            expect(normalQuery).toBeNull();
+
+            // 使用 paranoid: false 可以找到软删除的数据
+            const softDeletedQuery = await OcrData.model.findByPk(testOcrData.id, { paranoid: false });
+            expect(softDeletedQuery).not.toBeNull();
+            expect(softDeletedQuery.deletedAt).toBeDefined();
+        });
+
+        test('应该支持硬删除', async () => {
+            // 硬删除数据
+            await OcrData.model.destroy({
+                where: { id: testOcrData.id },
+                force: true
+            });
+
+            // 硬删除后，即使使用 paranoid: false 也找不到数据
+            const hardDeletedQuery = await OcrData.model.findByPk(testOcrData.id, { paranoid: false });
+            expect(hardDeletedQuery).toBeNull();
+        });
+
+        test('findByWorkspaceId应该排除软删除的数据', async () => {
+            // 软删除部分数据
+            await OcrData.model.destroy({
+                where: { id: testOcrData.id }
+            });
+
+            // 查询工作空间数据应该排除软删除的数据
+            const workspaceData = await OcrData.findByWorkspaceId(testWorkspace.id);
+            expect(workspaceData).toHaveLength(0);
+        });
+    });
 }); 

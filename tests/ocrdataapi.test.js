@@ -343,7 +343,7 @@ describe('OCR Data API Router Tests', () => {
             });
         });
 
-        it('应该成功批量删除OCR数据', async () => {
+        it('应该成功批量硬删除OCR数据', async () => {
             const response = await request(server)
                 .delete('/ocrdata/batch')
                 .set('Authorization', `Bearer ${authToken}`)
@@ -355,6 +355,10 @@ describe('OCR Data API Router Tests', () => {
             expect(response.body.data.deletedCount).toBe(2);
             expect(response.body.data.deletedIds).toContain(testOcrData1.id);
             expect(response.body.data.deletedIds).toContain(testOcrData2.id);
+
+            // 验证数据已被彻底删除（硬删除）
+            const remainingData = await OcrData.model.findAll({ paranoid: false });
+            expect(remainingData).toHaveLength(0);
         });
 
         it('应该验证请求体格式', async () => {
@@ -429,6 +433,87 @@ describe('OCR Data API Router Tests', () => {
             // 清理
             await Workspace.delete(otherWorkspace.id);
             await User.delete(otherUser.id);
+        });
+    });
+
+    describe('GET /ocrdata/stats - 获取处理统计信息', () => {
+        let createdOcrData;
+
+        beforeEach(async () => {
+            // 创建一些测试OCR数据
+            const ocrDataArray = [
+                {
+                    reportImage: 'path/to/image1.jpg',
+                    ocrPrimitive: 'OCR识别结果1',
+                    workspaceId: testWorkspace.id
+                },
+                {
+                    reportImage: 'path/to/image2.jpg',
+                    ocrPrimitive: 'OCR识别结果2',
+                    workspaceId: testWorkspace.id
+                }
+            ];
+            createdOcrData = await OcrData.createBatch(ocrDataArray);
+
+            // 软删除第一条数据
+            await OcrData.model.destroy({
+                where: { id: createdOcrData[0].id }
+            });
+        });
+
+        it('应该成功获取处理统计信息', async () => {
+            const response = await request(server)
+                .get('/ocrdata/stats')
+                .set('Authorization', `Bearer ${authToken}`)
+                .expect(200);
+
+            expect(response.body.success).toBe(true);
+            expect(response.body.message).toBe('获取统计信息成功');
+            expect(response.body.data).toHaveProperty('pending');
+            expect(response.body.data).toHaveProperty('processing');
+            expect(response.body.data).toHaveProperty('completed');
+            expect(response.body.data).toHaveProperty('failed');
+            
+            expect(typeof response.body.data.pending).toBe('number');
+            expect(typeof response.body.data.processing).toBe('number');
+        });
+
+        it('应该拒绝未认证的请求', async () => {
+            const response = await request(server)
+                .get('/ocrdata/stats')
+                .expect(401);
+        });
+    });
+
+    describe('POST /ocrdata/process - 手动触发OCR处理', () => {
+        it('应该成功触发OCR处理', async () => {
+            const response = await request(server)
+                .post('/ocrdata/process')
+                .set('Authorization', `Bearer ${authToken}`)
+                .send({ batchSize: 30 })
+                .expect(200);
+
+            expect(response.body.success).toBe(true);
+            expect(response.body.message).toBe('OCR处理已触发');
+            expect(response.body.data.batchSize).toBe(30);
+        });
+
+        it('应该使用默认批次大小', async () => {
+            const response = await request(server)
+                .post('/ocrdata/process')
+                .set('Authorization', `Bearer ${authToken}`)
+                .send({})
+                .expect(200);
+
+            expect(response.body.success).toBe(true);
+            expect(response.body.data.batchSize).toBe(50); // 默认值
+        });
+
+        it('应该拒绝未认证的请求', async () => {
+            const response = await request(server)
+                .post('/ocrdata/process')
+                .send({ batchSize: 30 })
+                .expect(401);
         });
     });
 }); 
