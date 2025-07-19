@@ -62,9 +62,11 @@ class AiProcessor {
         try {
             const prompt = this.buildPrompt(ocrDataList);
             
-            logger.info('发送AI模型请求');
-            logger.info('AI模型请求参数:', { model: this.model, temperature: 0.1, max_tokens: 4000, top_p: 0.8 });
-            logger.info('AI模型请求内容长度:', prompt.length, '字符');            
+            logger.info('AI模型请求参数:', JSON.stringify({ model: this.model, temperature: 0.1, max_tokens: 4000, top_p: 0.8 }, null, 2));
+            logger.info('AI模型请求内容长度:', prompt.length, '字符');
+            logger.info('=== AI模型请求内容开始 ===');
+            logger.info(prompt);
+            logger.info('=== AI模型请求内容结束 ===');            
             const completion = await this.openai.chat.completions.create({
                 model: this.model,
                 messages: [
