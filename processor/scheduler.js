@@ -107,13 +107,9 @@ class Scheduler {
 
             // 如果调度器仍在运行，安排下次执行
             if (this.isRunning) {
-                if (nextDelay === 0) {
-                    // 立即执行下次任务
-                    setImmediate(() => this.runTask());
-                } else {
-                    // 延迟执行下次任务
-                    this.currentTimeout = setTimeout(() => this.runTask(), nextDelay);
-                }
+                // 即使延时为0，也要使用setTimeout来避免无限循环
+                // 使用setImmediate会导致立即执行，可能造成栈溢出
+                this.currentTimeout = setTimeout(() => this.runTask(), nextDelay);
             }
 
         } catch (error) {

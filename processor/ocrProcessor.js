@@ -2,23 +2,23 @@ const { OcrData } = require('../models/ocrdata');
 const { LabReport } = require('../models/labreport');
 const AiProcessor = require('./aiProcessor');
 const logger = require('../config/logger');
+const config = require('../config/config');
 
 class OcrProcessor {
     constructor() {
         this.isProcessing = false;
-        this.processingInterval = null;
         this.aiProcessor = new AiProcessor();
     }
 
     /**
      * 运行OCR处理任务
-     * @param {number} batchSize - 批次大小，默认50
+     * @param {number} batchSize - 批次大小，默认5
      * @returns {Promise<number>} 下次执行任务的延时（毫秒）
      */
-    async runTask(batchSize = 50) {
+    async runTask(batchSize = config.OCR_PROCESSOR_BATCH_SIZE) {
         if (this.isProcessing) {
-            logger.warn('OCR处理器正在运行中，跳过本次处理');
-            return 30000; // 30秒后重试
+            logger.warn('OCR处理器正在运行中，跳过本次处理, 在' + config.OCR_PROCESSOR_DELAY + 'ms后重试');
+            return config.OCR_PROCESSOR_DELAY; // 30秒后重试
         }
 
         this.isProcessing = true;
@@ -36,8 +36,8 @@ class OcrProcessor {
             
             // 2. 如果没有返回任何 ocrdata 数据，则直接返回延时 30s
             if (ocrDataList.length === 0) {
-                logger.info('没有待处理的OCR数据');
-                return 30000; // 30秒
+                logger.info('没有待处理的OCR数据，在' + config.OCR_PROCESSOR_DELAY + 'ms后重试');
+                return config.OCR_PROCESSOR_DELAY; // 30秒
             }
 
             logger.info(`获取到 ${ocrDataList.length} 条待处理OCR数据`);
@@ -85,18 +85,8 @@ class OcrProcessor {
                         skippedCount++;
                     }
                 } catch (error) {
-                    logger.error(`处理OCR数据 ${ocrData.id} 时发生错误:`, error);
-                    
-                    // 错误处理：检查数据是否存在，决定是否恢复
-                    const stillExists = await OcrData.checkExists(ocrData.id);
-                    if (stillExists) {
-                        await OcrData.restore(ocrData.id);
-                        logger.info(`OCR数据 ${ocrData.id} 处理出错，已恢复等待下次重试`);
-                        failedCount++;
-                        hasPartialFailure = true;
-                    } else {
-                        skippedCount++;
-                    }
+                    logger.error(`处理OCR数据 ${ocrData.id} 时发生错误, 作为未成功提取的数据做处理:`, error);
+                    hasPartialFailure = true;
                 }
             }
 
@@ -123,15 +113,8 @@ class OcrProcessor {
                             skippedCount++;
                         }
                     } catch (error) {
-                        logger.error(`处理未提取OCR数据 ${ocrData.id} 时发生错误:`, error);
-                        const stillExists = await OcrData.checkExists(ocrData.id);
-                        if (stillExists) {
-                            await OcrData.restore(ocrData.id);
-                            failedCount++;
-                            hasPartialFailure = true;
-                        } else {
-                            skippedCount++;
-                        }
+                        logger.error(`处理未提取OCR数据 ${ocrData.id} 时发生错误，可能数据已经损坏，跳过:`, error);
+                        skippedCount++;
                     }
                 }
             }
@@ -139,14 +122,14 @@ class OcrProcessor {
             logger.info(`OCR处理任务完成 - 成功: ${processedCount}, 跳过: ${skippedCount}, 失败: ${failedCount}`);
 
             // 5. 在提取任务结束后，检查第#1步中所取出的 ocrdata 个数
-            if (hasPartialFailure || (ocrDataList.length === batchSize && processedCount < ocrDataList.length)) {
-                // 如果有部分失败，或者达到批次大小但未完全成功，则 ocrdata table 还有数据
+            if (hasPartialFailure || ocrDataList.length === batchSize) {
+                // 如果有部分失败，或者达到批次大小，则 ocrdata table 还有数据
                 logger.info('OCR数据表还有数据，延时100ms继续提取');
-                return 100; // 100毫秒
+                return config.OCR_PROCESSOR_IMMEDIATE_DELAY; // 100毫秒
             } else {
-                // 如果完全成功（无论批次大小），则认为 ocrdata table 已经被清空
+                // 如果完全成功并且没有达到批次大小，则认为 ocrdata table 已经被清空
                 logger.info('OCR数据表已清空，延时30s进行信息提取');
-                return 30000; // 30秒
+                return config.OCR_PROCESSOR_DELAY; // 30秒
             }
 
         } catch (error) {
@@ -165,7 +148,7 @@ class OcrProcessor {
                 logger.info('处理失败，已恢复所有OCR数据');
             }
             
-            return 30000; // 30秒后重试
+            return config.OCR_PROCESSOR_ERROR_RETRY_DELAY; // 错误重试延时
         } finally {
             this.isProcessing = false;
         }
@@ -173,10 +156,10 @@ class OcrProcessor {
 
     /**
      * 处理OCR数据批次（保持向后兼容）
-     * @param {number} batchSize - 批次大小，默认50
+     * @param {number} batchSize - 批次大小，默认5
      * @returns {Promise<Object>} 处理结果
      */
-    async processBatch(batchSize = 50) {
+    async processBatch(batchSize = config.OCR_PROCESSOR_BATCH_SIZE) {
         const delay = await this.runTask(batchSize);
         
         return {
@@ -191,39 +174,7 @@ class OcrProcessor {
 
 
 
-    /**
-     * 启动定时处理
-     * @param {number} intervalMinutes - 处理间隔（分钟），默认5分钟
-     */
-    startScheduledProcessing(intervalMinutes = 5) {
-        if (this.processingInterval) {
-            logger.warn('OCR定时处理已在运行中');
-            return;
-        }
 
-        logger.info(`启动OCR定时处理，间隔 ${intervalMinutes} 分钟`);
-        
-        // 立即执行一次
-        this.processBatch();
-        
-        // 设置定时器
-        this.processingInterval = setInterval(() => {
-            this.processBatch();
-        }, intervalMinutes * 60 * 1000);
-    }
-
-    /**
-     * 停止定时处理
-     */
-    stopScheduledProcessing() {
-        if (this.processingInterval) {
-            clearInterval(this.processingInterval);
-            this.processingInterval = null;
-            logger.info('OCR定时处理已停止');
-        } else {
-            logger.warn('OCR定时处理未在运行');
-        }
-    }
 
     /**
      * 获取处理器状态
@@ -231,9 +182,7 @@ class OcrProcessor {
      */
     getStatus() {
         return {
-            isProcessing: this.isProcessing,
-            isScheduled: this.processingInterval !== null,
-            processingInterval: this.processingInterval ? 'running' : 'stopped'
+            isProcessing: this.isProcessing
         };
     }
 
@@ -242,7 +191,7 @@ class OcrProcessor {
      * @param {number} batchSize - 批次大小
      * @returns {Promise<Object>} 处理结果
      */
-    async triggerProcessing(batchSize = 50) {
+    async triggerProcessing(batchSize = config.OCR_PROCESSOR_BATCH_SIZE) {
         logger.info(`手动触发OCR处理，批次大小: ${batchSize}`);
         return await this.processBatch(batchSize);
     }

@@ -1,6 +1,7 @@
 require('dotenv').config();
 const logger = require('../config/logger');
 const OpenAI = require('openai');
+const config = require('../config/config');
 
 class AiProcessor {
     constructor() {
@@ -79,7 +80,7 @@ class AiProcessor {
                 max_tokens: 4000,
                 top_p: 0.8
             }, {
-                timeout: 60000 // 设置1分钟超时
+                timeout: config.AI_PROCESSOR_TIMEOUT // 设置1分钟超时
             });
             
             if (!completion || !completion.choices || completion.choices.length === 0) {

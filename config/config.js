@@ -1,5 +1,11 @@
 require('dotenv').config();
 
 module.exports = {
-    SECRET_KEY: process.env.SECRET_KEY || 'default-secret-key'
+    SECRET_KEY: process.env.SECRET_KEY || 'default-secret-key',
+    OCR_PROCESSOR_DELAY: process.env.OCR_PROCESSOR_DELAY || 30000,
+    OCR_PROCESSOR_BATCH_SIZE: process.env.OCR_PROCESSOR_BATCH_SIZE || 5,
+    OCR_PROCESSOR_IMMEDIATE_DELAY: process.env.OCR_PROCESSOR_IMMEDIATE_DELAY || 100,
+    OCR_PROCESSOR_ERROR_RETRY_DELAY: process.env.OCR_PROCESSOR_ERROR_RETRY_DELAY || 100,
+
+    AI_PROCESSOR_TIMEOUT: process.env.AI_PROCESSOR_TIMEOUT || 60000
 };
