@@ -1,159 +1,88 @@
 const { OcrData } = require('../models/ocrdata');
 const { LabReport } = require('../models/labreport');
+const AiProcessor = require('./aiProcessor');
 const logger = require('../config/logger');
 
 class OcrProcessor {
     constructor() {
         this.isProcessing = false;
         this.processingInterval = null;
+        this.aiProcessor = new AiProcessor();
     }
 
     /**
-     * 处理OCR数据批次
+     * 运行OCR处理任务
      * @param {number} batchSize - 批次大小，默认50
-     * @returns {Promise<Object>} 处理结果
+     * @returns {Promise<number>} 下次执行任务的延时（毫秒）
      */
-    async processBatch(batchSize = 50) {
+    async runTask(batchSize = 50) {
         if (this.isProcessing) {
             logger.warn('OCR处理器正在运行中，跳过本次处理');
-            return {
-                success: false,
-                message: 'OCR处理器正在运行中',
-                processedCount: 0,
-                skippedCount: 0,
-                failedCount: 0
-            };
+            return 30000; // 30秒后重试
         }
 
         this.isProcessing = true;
         let processedCount = 0;
         let skippedCount = 0;
         let failedCount = 0;
+        let hasPartialFailure = false;
+        let ocrDataList = [];
 
         try {
-            logger.info(`开始OCR处理批次，批次大小: ${batchSize}`);
+            logger.info(`开始OCR处理任务，批次大小: ${batchSize}`);
 
-            // 获取并软删除待处理数据
-            const ocrDataList = await OcrData.getAndSoftDelete(batchSize);
+            // 1. 使用 getAndSoftDelete 函数获取所要处理的 ocrdata list 数据
+            ocrDataList = await OcrData.getAndSoftDelete(batchSize);
             
+            // 2. 如果没有返回任何 ocrdata 数据，则直接返回延时 30s
             if (ocrDataList.length === 0) {
                 logger.info('没有待处理的OCR数据');
-                return {
-                    success: true,
-                    message: '没有待处理的OCR数据',
-                    processedCount: 0,
-                    skippedCount: 0,
-                    failedCount: 0
-                };
+                return 30000; // 30秒
             }
 
             logger.info(`获取到 ${ocrDataList.length} 条待处理OCR数据`);
 
-            // 批量处理所有数据
-            const batchResult = await this.processOcrDataBatch(ocrDataList);
-            processedCount = batchResult.processedCount;
-            skippedCount = batchResult.skippedCount;
-            failedCount = batchResult.failedCount;
-
-            logger.info(`OCR处理批次完成 - 成功: ${processedCount}, 跳过: ${skippedCount}, 失败: ${failedCount}`);
-
-            return {
-                success: true,
-                message: 'OCR处理批次完成',
-                processedCount,
-                skippedCount,
-                failedCount,
-                totalCount: ocrDataList.length
-            };
-
-        } catch (error) {
-            logger.error('OCR处理批次失败:', error);
-            return {
-                success: false,
-                message: 'OCR处理批次失败: ' + error.message,
-                processedCount,
-                skippedCount,
-                failedCount,
-                error: error.message
-            };
-        } finally {
-            this.isProcessing = false;
-        }
-    }
-
-    /**
-     * 批量处理OCR数据
-     * @param {Array} ocrDataBatch - OCR数据数组
-     * @returns {Promise<Object>} 处理结果
-     */
-    async processOcrDataBatch(ocrDataBatch) {
-        let processedCount = 0;
-        let skippedCount = 0;
-        let failedCount = 0;
-
-        try {
-            // 过滤出仍然存在的数据（未被客户端硬删除）
-            const existingData = [];
-            const nonExistingIds = [];
-
-            for (const ocrData of ocrDataBatch) {
-                const stillExists = await OcrData.checkExists(ocrData.id);
-                if (stillExists) {
-                    existingData.push(ocrData);
-                } else {
-                    nonExistingIds.push(ocrData.id);
-                    skippedCount++;
-                }
-            }
-
-            if (nonExistingIds.length > 0) {
-                logger.info(`跳过已被删除的OCR数据: ${nonExistingIds.join(', ')}`);
-            }
-
-            if (existingData.length === 0) {
-                logger.info('当前批次中没有有效的OCR数据');
-                return { processedCount: 0, skippedCount, failedCount: 0 };
-            }
-
-            // 批量调用大模型处理
-            const labReportResults = await this.extractLabReportsFromOcrBatch(existingData);
+            // 3. 调用 aiProcessor 中的 processOcrDataList 对 ocrdata 进行信息提取
+            const labReportResults = await this.aiProcessor.processOcrDataList(ocrDataList);
             
-            // 处理结果
-            for (let i = 0; i < existingData.length; i++) {
-                const ocrData = existingData[i];
-                const labReportData = labReportResults[i];
+            // 4. 提取完成后将提取结果和输入的 ocrDataList 进行比对
+            // 创建 OCR 数据 ID 到 OCR 数据的映射
+            const ocrDataMap = new Map();
+            ocrDataList.forEach(ocrData => {
+                ocrDataMap.set(ocrData.id, ocrData);
+            });
+
+            // 处理每个 LabReport 结果
+            for (const labReportData of labReportResults) {
+                if (!labReportData || !labReportData.ocrdataId) {
+                    logger.warn('LabReport数据缺少ocrdataId字段，跳过处理');
+                    continue;
+                }
+
+                const ocrData = ocrDataMap.get(labReportData.ocrdataId);
+                if (!ocrData) {
+                    logger.warn(`未找到对应的OCR数据，ocrdataId: ${labReportData.ocrdataId}`);
+                    continue;
+                }
 
                 try {
-                    if (labReportData) {
-                        // 再次检查数据是否存在（处理过程中可能被删除）
-                        const stillExistsAfterProcessing = await OcrData.checkExists(ocrData.id);
+                    // 检查该 ocrdata 有没有被客户端删除
+                    const stillExists = await OcrData.checkExists(ocrData.id);
+                    
+                    // 3a. 如果某个 ocrdata 完成了提取
+                    if (stillExists) {
+                        // 如果没有被删除，则根据提取结果生成 labreport 实例并保存到数据库中
+                        await LabReport.createWithItems(labReportData);
+                        logger.info(`成功处理OCR数据 ${ocrData.id}，创建LabReport`);
                         
-                        if (stillExistsAfterProcessing) {
-                            // 创建LabReport
-                            await LabReport.createWithItems(labReportData);
-                            logger.info(`成功处理OCR数据 ${ocrData.id}，创建LabReport`);
-                            
-                            // 硬删除OCR数据（处理完成）
-                            await OcrData.hardDeleteBatch([ocrData.id]);
-                            
-                            processedCount++;
-                        } else {
-                            logger.info(`OCR数据 ${ocrData.id} 在处理完成后被删除，丢弃处理结果`);
-                            skippedCount++;
-                        }
+                        // 同时将该条 ocrdata 数据在数据库中硬删除
+                        await OcrData.hardDeleteBatch([ocrData.id]);
+                        
+                        processedCount++;
                     } else {
-                        // 处理失败，检查数据是否仍然存在
-                        const stillExistsAfterFailure = await OcrData.checkExists(ocrData.id);
-                        
-                        if (stillExistsAfterFailure) {
-                            // 恢复数据，下次重试
-                            await OcrData.restore(ocrData.id);
-                            logger.warn(`OCR数据 ${ocrData.id} 处理失败，已恢复等待下次重试`);
-                            failedCount++;
-                        } else {
-                            logger.info(`OCR数据 ${ocrData.id} 处理失败且已被删除，丢弃`);
-                            skippedCount++;
-                        }
+                        // 如果该 ocrdata 已经被客户端硬删除，则丢弃该提取结果
+                        logger.info(`OCR数据 ${ocrData.id} 已被客户端删除，丢弃提取结果`);
+                        skippedCount++;
                     }
                 } catch (error) {
                     logger.error(`处理OCR数据 ${ocrData.id} 时发生错误:`, error);
@@ -164,143 +93,103 @@ class OcrProcessor {
                         await OcrData.restore(ocrData.id);
                         logger.info(`OCR数据 ${ocrData.id} 处理出错，已恢复等待下次重试`);
                         failedCount++;
+                        hasPartialFailure = true;
                     } else {
                         skippedCount++;
                     }
                 }
             }
 
-            return { processedCount, skippedCount, failedCount };
+            // 处理未成功提取的 OCR 数据
+            for (const ocrData of ocrDataList) {
+                // 检查是否有对应的 LabReport 结果
+                const hasLabReportResult = labReportResults.some(labReportData => 
+                    labReportData && labReportData.ocrdataId === ocrData.id
+                );
+
+                if (!hasLabReportResult) {
+                    // 3b. 如果某个 ocrdata 没有完成提取
+                    try {
+                        const stillExists = await OcrData.checkExists(ocrData.id);
+                        if (stillExists) {
+                            // 如果没有删除，那么将该条 ocrdata 在数据库还原，用于下一次提取
+                            await OcrData.restore(ocrData.id);
+                            logger.warn(`OCR数据 ${ocrData.id} 提取失败，已恢复等待下次重试`);
+                            failedCount++;
+                            hasPartialFailure = true;
+                        } else {
+                            // 如果删除了，则不处理
+                            logger.info(`OCR数据 ${ocrData.id} 提取失败且已被删除，丢弃`);
+                            skippedCount++;
+                        }
+                    } catch (error) {
+                        logger.error(`处理未提取OCR数据 ${ocrData.id} 时发生错误:`, error);
+                        const stillExists = await OcrData.checkExists(ocrData.id);
+                        if (stillExists) {
+                            await OcrData.restore(ocrData.id);
+                            failedCount++;
+                            hasPartialFailure = true;
+                        } else {
+                            skippedCount++;
+                        }
+                    }
+                }
+            }
+
+            logger.info(`OCR处理任务完成 - 成功: ${processedCount}, 跳过: ${skippedCount}, 失败: ${failedCount}`);
+
+            // 5. 在提取任务结束后，检查第#1步中所取出的 ocrdata 个数
+            if (hasPartialFailure || (ocrDataList.length === batchSize && processedCount < ocrDataList.length)) {
+                // 如果有部分失败，或者达到批次大小但未完全成功，则 ocrdata table 还有数据
+                logger.info('OCR数据表还有数据，延时100ms继续提取');
+                return 100; // 100毫秒
+            } else {
+                // 如果完全成功（无论批次大小），则认为 ocrdata table 已经被清空
+                logger.info('OCR数据表已清空，延时30s进行信息提取');
+                return 30000; // 30秒
+            }
 
         } catch (error) {
-            logger.error('批量处理OCR数据失败:', error);
+            logger.error('OCR处理任务失败:', error);
             
             // 批量恢复所有数据
-            const restorePromises = ocrDataBatch.map(async (ocrData) => {
-                const stillExists = await OcrData.checkExists(ocrData.id);
-                if (stillExists) {
-                    await OcrData.restore(ocrData.id);
-                }
-            });
-            
-            await Promise.all(restorePromises);
-            logger.info('批量处理失败，已恢复所有OCR数据');
-            
-            return { processedCount: 0, skippedCount, failedCount: ocrDataBatch.length };
-        }
-    }
-
-    /**
-     * 批量调用大模型提取LabReport信息
-     * @param {Array} ocrDataBatch - OCR数据数组
-     * @returns {Promise<Array>} 提取的LabReport数据数组
-     */
-    async extractLabReportsFromOcrBatch(ocrDataBatch) {
-        try {
-            logger.debug(`开始批量提取LabReport信息，OCR数据数量: ${ocrDataBatch.length}`);
-
-            // 批量调用大模型API
-            const extractedDataArray = await this.callLargeModelBatch(ocrDataBatch);
-            
-            // 验证和转换结果
-            const labReportDataArray = [];
-            
-            for (let i = 0; i < ocrDataBatch.length; i++) {
-                const ocrData = ocrDataBatch[i];
-                const extractedData = extractedDataArray[i];
+            if (ocrDataList && ocrDataList.length > 0) {
+                const restorePromises = ocrDataList.map(async (ocrData) => {
+                    const stillExists = await OcrData.checkExists(ocrData.id);
+                    if (stillExists) {
+                        await OcrData.restore(ocrData.id);
+                    }
+                });
                 
-                if (!extractedData) {
-                    logger.warn(`大模型未返回有效数据，OCR数据ID: ${ocrData.id}`);
-                    labReportDataArray.push(null);
-                    continue;
-                }
-
-                // 验证提取的数据
-                if (!extractedData.patient || !extractedData.items || extractedData.items.length === 0) {
-                    logger.warn(`大模型返回的数据不完整，OCR数据ID: ${ocrData.id}`);
-                    labReportDataArray.push(null);
-                    continue;
-                }
-
-                const labReportData = {
-                    patient: extractedData.patient,
-                    reportTime: extractedData.reportTime || new Date(),
-                    doctor: extractedData.doctor || '未知医生',
-                    reportImage: ocrData.reportImage,
-                    hospital: extractedData.hospital || '未知医院',
-                    workspaceId: ocrData.workspaceId,
-                    items: extractedData.items || []
-                };
-
-                labReportDataArray.push(labReportData);
-                logger.debug(`成功提取LabReport信息，OCR数据ID: ${ocrData.id}, 患者: ${labReportData.patient}`);
+                await Promise.all(restorePromises);
+                logger.info('处理失败，已恢复所有OCR数据');
             }
-
-            return labReportDataArray;
-
-        } catch (error) {
-            logger.error(`批量提取LabReport信息失败:`, error);
-            return new Array(ocrDataBatch.length).fill(null);
+            
+            return 30000; // 30秒后重试
+        } finally {
+            this.isProcessing = false;
         }
     }
 
     /**
-     * 批量调用大模型API（示例实现）
-     * @param {Array} ocrDataBatch - OCR数据数组
-     * @returns {Promise<Array>} 大模型返回的提取结果数组
+     * 处理OCR数据批次（保持向后兼容）
+     * @param {number} batchSize - 批次大小，默认50
+     * @returns {Promise<Object>} 处理结果
      */
-    async callLargeModelBatch(ocrDataBatch) {
-        try {
-            logger.debug(`批量调用大模型API，处理 ${ocrDataBatch.length} 条OCR数据`);
-
-            // 模拟处理延迟
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            
-            // 模拟批量大模型API调用
-            // 这里应该替换为实际的大模型API批量调用
-            // 例如：OpenAI GPT、Claude、通义千问等
-            
-            const results = [];
-            
-            for (const ocrData of ocrDataBatch) {
-                // 模拟提取结果
-                const extractedData = {
-                    patient: `患者${ocrData.id}`,
-                    reportTime: new Date(),
-                    doctor: '李医生',
-                    hospital: '测试医院',
-                    items: [
-                        {
-                            itemName: '血常规',
-                            result: '正常',
-                            unit: 'g/L',
-                            referenceValue: '3.5-5.5'
-                        },
-                        {
-                            itemName: '尿常规',
-                            result: '正常',
-                            unit: 'g/L',
-                            referenceValue: '3.5-5.5'
-                        }
-                    ]
-                };
-
-                // 模拟90%的成功率
-                if (Math.random() < 0.9) {
-                    results.push(extractedData);
-                } else {
-                    logger.warn(`大模型API调用失败（模拟），OCR数据ID: ${ocrData.id}`);
-                    results.push(null);
-                }
-            }
-
-            return results;
-
-        } catch (error) {
-            logger.error('批量调用大模型API失败:', error);
-            return new Array(ocrDataBatch.length).fill(null);
-        }
+    async processBatch(batchSize = 50) {
+        const delay = await this.runTask(batchSize);
+        
+        return {
+            success: true,
+            message: 'OCR处理批次完成',
+            nextDelay: delay,
+            processedCount: 0, // 这些信息在 runTask 中已经记录到日志
+            skippedCount: 0,
+            failedCount: 0
+        };
     }
+
+
 
     /**
      * 启动定时处理

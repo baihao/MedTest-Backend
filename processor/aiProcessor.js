@@ -78,6 +78,8 @@ class AiProcessor {
                 temperature: 0.1,
                 max_tokens: 4000,
                 top_p: 0.8
+            }, {
+                timeout: 60000 // 设置1分钟超时
             });
             
             if (!completion || !completion.choices || completion.choices.length === 0) {
