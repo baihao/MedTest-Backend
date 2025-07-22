@@ -1,4 +1,5 @@
 const logger = require('../config/logger');
+const config = require('../config/config');
 
 /**
  * 调度器类 - 支持无限循环调用任务
@@ -122,7 +123,7 @@ class Scheduler {
             // 任务失败时，等待5秒后重试
             if (this.isRunning) {
                 logger.info('5秒后重试任务');
-                this.currentTimeout = setTimeout(() => this.runTask(), 5000);
+                this.currentTimeout = setTimeout(() => this.runTask(), config.SCHEDULER_ERROR_RETRY_DELAY);
             }
         }
     }

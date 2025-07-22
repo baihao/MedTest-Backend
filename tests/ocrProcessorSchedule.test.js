@@ -16,7 +16,8 @@ const TEST_CONFIG = {
     OCR_PROCESSOR_BATCH_SIZE: 3,
     OCR_PROCESSOR_IMMEDIATE_DELAY: 10, // 10毫秒
     OCR_PROCESSOR_ERROR_RETRY_DELAY: 10, // 10毫秒
-    AI_PROCESSOR_TIMEOUT: 5000
+    AI_PROCESSOR_TIMEOUT: 5000,
+    SCHEDULER_ERROR_RETRY_DELAY: 10 // 10毫秒
 };
 
 describe('OCR Processor Schedule Tests', () => {
@@ -219,7 +220,7 @@ describe('OCR Processor Schedule Tests', () => {
             await startPromise;
             
             // 验证任务执行次数（应该执行多次，因为有部分失败）
-            expect(taskExecutionCount).toBeGreaterThan(1);
+            expect(taskExecutionCount).toBeGreaterThan(2);
             
             // 验证第一个 OCR 数据已被处理
             const exists1 = await OcrData.checkExists(testOcrData1.id);
@@ -233,7 +234,14 @@ describe('OCR Processor Schedule Tests', () => {
 
     describe('调度器错误处理测试', () => {
         test('AI处理失败时调度器继续运行', async () => {
-            // 设置 mock 抛出异常
+            // 创建测试 OCR 数据，让OCR处理器能够获取到数据
+            const testOcrData = await OcrData.create({
+                reportImage: 'test1.jpg',
+                ocrPrimitive: '{"textResults": [{"text": "患者姓名：张三"}]}',
+                workspaceId: 1
+            });
+
+            // 设置 mock 抛出异常，模拟AI处理失败
             mockAiProcessor.processOcrDataList.mockRejectedValue(new Error('AI处理失败'));
             
             let taskExecutionCount = 0;
@@ -246,18 +254,22 @@ describe('OCR Processor Schedule Tests', () => {
             const startPromise = scheduler.startSchedule(task, 0);
             
             // 等待一段时间
-            await new Promise(resolve => setTimeout(resolve, 200));
+            await new Promise(resolve => setTimeout(resolve, 100));
             
             // 停止调度器
             scheduler.stopSchedule();
             await startPromise;
             
-            // 验证任务执行次数（应该执行多次，因为错误后5秒重试）
-            expect(taskExecutionCount).toBeGreaterThan(0);
+            // 验证任务执行次数（应该执行5+次，因为错误后10ms重试）
+            expect(taskExecutionCount).toBeGreaterThan(5);
             
             // 验证调度器状态
             const status = scheduler.getStatus();
             expect(status.isRunning).toBe(false);
+            
+            // 验证OCR数据已被恢复（因为AI处理失败）
+            const exists = await OcrData.checkExists(testOcrData.id);
+            expect(exists).toBe(true);
         });
 
         test('任务函数抛出异常时调度器继续运行', async () => {
@@ -271,14 +283,14 @@ describe('OCR Processor Schedule Tests', () => {
             const startPromise = scheduler.startSchedule(task, 0);
             
             // 等待一段时间
-            await new Promise(resolve => setTimeout(resolve, 200));
+            await new Promise(resolve => setTimeout(resolve, 100));
             
             // 停止调度器
             scheduler.stopSchedule();
             await startPromise;
             
-            // 验证任务执行次数（应该执行多次，因为错误后5秒重试）
-            expect(taskExecutionCount).toBeGreaterThan(0);
+            // 验证任务执行次数（应该执行5+次，因为错误后10ms重试）
+            expect(taskExecutionCount).toBeGreaterThan(5);
             
             // 验证调度器状态
             const status = scheduler.getStatus();
