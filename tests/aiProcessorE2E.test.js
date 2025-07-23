@@ -4,8 +4,8 @@ const fs = require('fs');
 const path = require('path');
 
 describe('AiProcessor E2E Tests', () => {
-    // 增加超时时间到30秒，因为API调用需要时间
-    jest.setTimeout(30000);
+    // 增加超时时间到60秒，因为API调用需要时间
+    jest.setTimeout(60000);
     let aiProcessor;
     let testOcrData;
 

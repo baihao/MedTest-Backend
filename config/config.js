@@ -1,6 +1,7 @@
 require('dotenv').config();
 
 module.exports = {
+    SERVER_PORT: process.env.HTTP_SERVER_PORT || 3000,
     SECRET_KEY: process.env.SECRET_KEY || 'default-secret-key',
     OCR_PROCESSOR_DELAY: process.env.OCR_PROCESSOR_DELAY || 30000,
     OCR_PROCESSOR_BATCH_SIZE: process.env.OCR_PROCESSOR_BATCH_SIZE || 5,
@@ -9,6 +10,5 @@ module.exports = {
 
     AI_PROCESSOR_TIMEOUT: process.env.AI_PROCESSOR_TIMEOUT || 60000,
     SCHEDULER_ERROR_RETRY_DELAY: process.env.SCHEDULER_ERROR_RETRY_DELAY || 5000,
-    WS_SERVER_PORT: process.env.WS_SERVER_PORT || 8080,
     WS_SERVER_HEARTBEAT_INTERVAL: process.env.WS_SERVER_HEARTBEAT_INTERVAL || 60000
 };

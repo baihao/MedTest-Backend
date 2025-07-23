@@ -4,12 +4,16 @@ const AiProcessor = require('./aiProcessor');
 const logger = require('../config/logger');
 const config = require('../config/config');
 const { getUserIdFromLabReport } = require('../config/utils');
-const { wsServer } = require('../index');
 
 class OcrProcessor {
-    constructor() {
+    constructor(wsServer = null) {
         this.isProcessing = false;
         this.aiProcessor = new AiProcessor();
+        this.wsServer = wsServer;
+    }
+
+    setWsServer(wsServer) {
+        this.wsServer = wsServer;
     }
 
     /**
@@ -196,23 +200,33 @@ class OcrProcessor {
     }
 
     async notifyLabReportCreated(labReport, ocrData) {
-        const userId = await getUserIdFromLabReport(labReport);
-        if (!userId) {
-            logger.warn(`未找到LabReport对应的userId，labReportId: ${labReport.id}`);
-            return;
-        }
+        try {
+            const userId = await getUserIdFromLabReport(labReport);
+            if (!userId) {
+                logger.warn(`未找到LabReport对应的userId，labReportId: ${labReport.id}`);
+                return;
+            }
 
-        const success = wsServer.sendMsgToUser(userId, {
-            type: 'labReportCreated',
-            labReportId: labReport.id,
-            ocrDataId: ocrData.id,
-            timestamp: new Date().toISOString()
-        });
+            // 检查WebSocket服务器是否可用
+            if (!this.wsServer || typeof this.wsServer.sendMsgToUser !== 'function') {
+                logger.warn(`WebSocket服务器不可用，跳过通知用户 ${userId}`);
+                return;
+            }
 
-        if (success) {
-            logger.info(`已向用户 ${userId} 发送LabReport创建通知`);
-        } else {
-            logger.warn(`用户 ${userId} 当前没有活跃连接，无法发送通知`);
+            const success = this.wsServer.sendMsgToUser(userId, {
+                type: 'labReportCreated',
+                labReportId: labReport.id,
+                ocrDataId: ocrData.id,
+                timestamp: new Date().toISOString()
+            });
+
+            if (success) {
+                logger.info(`已向用户 ${userId} 发送LabReport创建通知`);
+            } else {
+                logger.warn(`用户 ${userId} 当前没有活跃连接，无法发送通知`);
+            }
+        } catch (error) {
+            logger.warn(`发送WebSocket通知失败: ${error.message}`);
         }
     }
 }

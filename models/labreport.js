@@ -172,6 +172,8 @@ class LabReport {
     // 创建检验报告
     static async createWithItems(labReportData) {
         try {
+            console.log('labReportData.items', labReportData.items);
+            console.log('labReportData.workspaceId', labReportData.workspaceId);
             // 数据验证
             this.validateLabReportData(labReportData);
             
@@ -209,6 +211,7 @@ class LabReport {
                 }));
                 const createdItems = await LabReportItem.createBatch(itemsWithLabReportId);
                 labReport.items = createdItems;
+                console.log('createdItems', createdItems);
             } else {
                 // 如果没有items，设置空数组
                 labReport.items = [];
@@ -228,18 +231,22 @@ class LabReport {
     // 根据ID查找检验报告（包含关联的检验项目）
     static async findByIdWithItems(id) {
         try {
+            console.log('findByIdWithItems', id);
             if (!id || isNaN(Number(id))) {
                 throw new LabReportError('检验报告ID参数无效');
             }
-            
+
             const labReport = await this.model.findByPk(id);
             if (!labReport) {
                 return null;
             }
+
+            console.log('labReport', labReport);
             
             // 获取关联的检验项目
             const { LabReportItem } = require('./labreportitem');
             const items = await LabReportItem.findByLabReportId(id);
+            console.log('items', items);
             
             // 构建包含items的JSON对象
             const reportJson = labReport.toJSON();

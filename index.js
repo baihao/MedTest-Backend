@@ -31,16 +31,13 @@ async function startServer() {
         // 初始化所有模型
         await ModelManager.init();
         
-        const PORT = process.env.PORT || 3000;
+        const PORT = config.SERVER_PORT;
         server = app.listen(PORT, () => {
             logger.info(`HTTP服务器运行在端口 ${PORT}`);
         });
-        
-        // 启动WebSocket服务器
-        wsServer = new WebSocketServer(server, {
-            port: config.WS_SERVER_PORT
-        });
-        logger.info(`WebSocket服务器运行在端口 ${config.WS_SERVER_PORT}`);
+        // 启动WebSocket服务器，复用同一个端口
+        wsServer = new WebSocketServer(server);
+        logger.info(`WebSocket服务器复用HTTP端口 ${PORT}`);
         
         // 优雅关闭
         process.on('SIGTERM', async () => {
