@@ -4,6 +4,7 @@ const { ModelManager } = require('./models/modelmgr');
 const loginRoutes = require('./routes/login');
 const workspaceRoutes = require('./routes/workspace');
 const labreportRoutes = require('./routes/labreport');
+const labreportitemRoutes = require('./routes/labreportitem');
 const ocrdataRoutes = require('./routes/ocrdata');
 const { errorHandler } = require('./config/midware');
 const { logger } = require('./config/logger');
@@ -18,6 +19,7 @@ app.use(express.json());
 app.use('/login', loginRoutes);
 app.use('/workspace', workspaceRoutes);
 app.use('/labreport', labreportRoutes);
+app.use('/labreportitem', labreportitemRoutes);
 app.use('/ocrdata', ocrdataRoutes);
 app.use(errorHandler);
 

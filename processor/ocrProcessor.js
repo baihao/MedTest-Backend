@@ -3,6 +3,8 @@ const { LabReport } = require('../models/labreport');
 const AiProcessor = require('./aiProcessor');
 const logger = require('../config/logger');
 const config = require('../config/config');
+const { getUserIdFromLabReport } = require('../config/utils');
+const { wsServer } = require('../index');
 
 class OcrProcessor {
     constructor() {
@@ -72,9 +74,10 @@ class OcrProcessor {
                     // 3a. 如果某个 ocrdata 完成了提取
                     if (stillExists) {
                         // 如果没有被删除，则根据提取结果生成 labreport 实例并保存到数据库中
-                        await LabReport.createWithItems(labReportData);
-                        logger.info(`成功处理OCR数据 ${ocrData.id}，创建LabReport`);
-                        
+                        const labReport = await LabReport.createWithItems(labReportData);
+                        logger.info(`成功处理OCR数据 ${ocrData.id}，创建LabReport: ${labReport.id}`);
+                        // 通知客户端
+                        this.notifyLabReportCreated(labReport, ocrData);
                         // 同时将该条 ocrdata 数据在数据库中硬删除
                         await OcrData.hardDeleteBatch([ocrData.id]);
                         
@@ -172,10 +175,6 @@ class OcrProcessor {
         };
     }
 
-
-
-
-
     /**
      * 获取处理器状态
      * @returns {Object} 处理器状态信息
@@ -194,6 +193,27 @@ class OcrProcessor {
     async triggerProcessing(batchSize = config.OCR_PROCESSOR_BATCH_SIZE) {
         logger.info(`手动触发OCR处理，批次大小: ${batchSize}`);
         return await this.processBatch(batchSize);
+    }
+
+    async notifyLabReportCreated(labReport, ocrData) {
+        const userId = await getUserIdFromLabReport(labReport);
+        if (!userId) {
+            logger.warn(`未找到LabReport对应的userId，labReportId: ${labReport.id}`);
+            return;
+        }
+
+        const success = wsServer.sendMsgToUser(userId, {
+            type: 'labReportCreated',
+            labReportId: labReport.id,
+            ocrDataId: ocrData.id,
+            timestamp: new Date().toISOString()
+        });
+
+        if (success) {
+            logger.info(`已向用户 ${userId} 发送LabReport创建通知`);
+        } else {
+            logger.warn(`用户 ${userId} 当前没有活跃连接，无法发送通知`);
+        }
     }
 }
 

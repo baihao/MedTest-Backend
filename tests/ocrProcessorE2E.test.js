@@ -10,6 +10,18 @@ const config = require('../config/config');
 // Mock AiProcessor
 jest.mock('../processor/aiProcessor');
 
+// Mock utils module
+jest.mock('../config/utils', () => ({
+    getUserIdFromLabReport: jest.fn()
+}));
+
+// Mock WebSocket server
+jest.mock('../index', () => ({
+    wsServer: {
+        sendMsgToUser: jest.fn()
+    }
+}));
+
 // 测试配置 - 使用更快的参数
 const TEST_CONFIG = {
     OCR_PROCESSOR_DELAY: 1000, // 1秒
@@ -22,6 +34,7 @@ const TEST_CONFIG = {
 describe('OcrProcessor E2E Tests', () => {
     let ocrProcessor;
     let mockAiProcessor;
+    let mockWsServer;
     let originalConfig;
 
     beforeEach(async () => {
@@ -50,6 +63,14 @@ describe('OcrProcessor E2E Tests', () => {
         
         // 重置 mock
         jest.clearAllMocks();
+        
+        // 获取 mock WebSocket server
+        const { wsServer } = require('../index');
+        mockWsServer = wsServer;
+        
+        // 获取 mock getUserIdFromLabReport
+        const { getUserIdFromLabReport } = require('../config/utils');
+        getUserIdFromLabReport.mockResolvedValue(1); // 默认返回用户ID 1
         
         // 创建 mock AiProcessor 实例
         mockAiProcessor = {
@@ -741,6 +762,271 @@ describe('OcrProcessor E2E Tests', () => {
             
             expect(delay).toBe(TEST_CONFIG.OCR_PROCESSOR_DELAY);
             expect(mockAiProcessor.processOcrDataList).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('runTask - WebSocket通知测试', () => {
+        test('成功处理OCR数据后发送WebSocket通知', async () => {
+            // 创建测试 OCR 数据
+            const testOcrData = await OcrData.create({
+                reportImage: 'test1.jpg',
+                ocrPrimitive: '{"textResults": [{"text": "患者姓名：张三"}]}',
+                workspaceId: 1
+            });
+
+            // 设置 mock 返回成功结果
+            const mockLabReportData = {
+                ocrdataId: testOcrData.id,
+                patient: '张三',
+                reportTime: new Date().toISOString(),
+                doctor: '李医生',
+                reportImage: 'test1.jpg',
+                hospital: '测试医院',
+                workspaceId: 1,
+                items: [
+                    {
+                        itemName: '血常规',
+                        result: '7.65',
+                        unit: '10^9/L',
+                        referenceValue: '3.5-9.5'
+                    }
+                ]
+            };
+            
+            mockAiProcessor.processOcrDataList.mockResolvedValue([mockLabReportData]);
+            
+            const delay = await ocrProcessor.runTask(5);
+            
+            expect(delay).toBe(TEST_CONFIG.OCR_PROCESSOR_DELAY);
+            
+            // 验证 WebSocket 通知被调用
+            expect(mockWsServer.sendMsgToUser).toHaveBeenCalledTimes(1);
+            
+            // 验证通知参数
+            const callArgs = mockWsServer.sendMsgToUser.mock.calls[0];
+            expect(callArgs[0]).toBe(1); // userId 应该是 1（测试用户的ID）
+            
+            const notificationMessage = callArgs[1];
+            expect(notificationMessage).toMatchObject({
+                type: 'labReportCreated',
+                labReportId: expect.any(Number),
+                ocrDataId: testOcrData.id,
+                timestamp: expect.any(String)
+            });
+            
+            // 验证 LabReport 已创建
+            const labReports = await LabReport.findByWorkspaceId(1);
+            expect(labReports).toHaveLength(1);
+            expect(notificationMessage.labReportId).toBe(labReports[0].id);
+        });
+
+        test('处理多个OCR数据时发送多个WebSocket通知', async () => {
+            // 创建多个测试 OCR 数据
+            const testOcrDataList = [];
+            for (let i = 0; i < 3; i++) {
+                const testOcrData = await OcrData.create({
+                    reportImage: `test${i}.jpg`,
+                    ocrPrimitive: `{"textResults": [{"text": "患者姓名：患者${i}"}]}`,
+                    workspaceId: 1
+                });
+                testOcrDataList.push(testOcrData);
+            }
+
+            // 设置 mock 返回成功结果
+            const mockLabReportDataList = testOcrDataList.map((ocrData, index) => ({
+                ocrdataId: ocrData.id,
+                patient: `患者${index}`,
+                reportTime: new Date().toISOString(),
+                doctor: '李医生',
+                reportImage: `test${index}.jpg`,
+                hospital: '测试医院',
+                workspaceId: 1,
+                items: [
+                    {
+                        itemName: '血常规',
+                        result: '7.65',
+                        unit: '10^9/L',
+                        referenceValue: '3.5-9.5'
+                    }
+                ]
+            }));
+            
+            mockAiProcessor.processOcrDataList.mockResolvedValue(mockLabReportDataList);
+            
+            const delay = await ocrProcessor.runTask(5);
+            
+            expect(delay).toBe(TEST_CONFIG.OCR_PROCESSOR_DELAY);
+            
+            // 验证 WebSocket 通知被调用了3次
+            expect(mockWsServer.sendMsgToUser).toHaveBeenCalledTimes(3);
+            
+            // 验证每次通知的参数
+            const labReports = await LabReport.findByWorkspaceId(1);
+            expect(labReports).toHaveLength(3);
+            
+            for (let i = 0; i < 3; i++) {
+                const callArgs = mockWsServer.sendMsgToUser.mock.calls[i];
+                expect(callArgs[0]).toBe(1); // userId
+                
+                const notificationMessage = callArgs[1];
+                expect(notificationMessage).toMatchObject({
+                    type: 'labReportCreated',
+                    labReportId: expect.any(Number),
+                    ocrDataId: testOcrDataList[i].id,
+                    timestamp: expect.any(String)
+                });
+            }
+        });
+
+        test('OCR数据被客户端删除时不发送WebSocket通知', async () => {
+            // 创建测试 OCR 数据
+            const testOcrData = await OcrData.create({
+                reportImage: 'test1.jpg',
+                ocrPrimitive: '{"textResults": [{"text": "患者姓名：张三"}]}',
+                workspaceId: 1
+            });
+
+            // 设置 mock 返回成功结果
+            const mockLabReportData = {
+                ocrdataId: testOcrData.id,
+                patient: '张三',
+                reportTime: new Date().toISOString(),
+                doctor: '李医生',
+                reportImage: 'test1.jpg',
+                hospital: '测试医院',
+                workspaceId: 1,
+                items: [
+                    {
+                        itemName: '血常规',
+                        result: '7.65',
+                        unit: '10^9/L',
+                        referenceValue: '3.5-9.5'
+                    }
+                ]
+            };
+            
+            mockAiProcessor.processOcrDataList.mockResolvedValue([mockLabReportData]);
+            
+            // 在 AI 处理之前删除 OCR 数据
+            await OcrData.hardDeleteBatch([testOcrData.id]);
+            
+            const delay = await ocrProcessor.runTask(5);
+            
+            expect(delay).toBe(TEST_CONFIG.OCR_PROCESSOR_DELAY);
+            
+            // 验证 WebSocket 通知没有被调用
+            expect(mockWsServer.sendMsgToUser).not.toHaveBeenCalled();
+        });
+
+        test('AI处理失败时不发送WebSocket通知', async () => {
+            // 创建测试 OCR 数据
+            const testOcrData = await OcrData.create({
+                reportImage: 'test1.jpg',
+                ocrPrimitive: '{"textResults": [{"text": "患者姓名：张三"}]}',
+                workspaceId: 1
+            });
+
+            // 设置 mock 抛出异常
+            mockAiProcessor.processOcrDataList.mockRejectedValue(new Error('AI处理失败'));
+            
+            const delay = await ocrProcessor.runTask(5);
+            
+            expect(delay).toBe(TEST_CONFIG.OCR_PROCESSOR_ERROR_RETRY_DELAY);
+            
+            // 验证 WebSocket 通知没有被调用
+            expect(mockWsServer.sendMsgToUser).not.toHaveBeenCalled();
+        });
+
+        test('找不到LabReport对应用户时不发送WebSocket通知', async () => {
+            // 设置 getUserIdFromLabReport 返回 null
+            const { getUserIdFromLabReport } = require('../config/utils');
+            getUserIdFromLabReport.mockResolvedValue(null);
+            
+            // 创建测试 OCR 数据
+            const testOcrData = await OcrData.create({
+                reportImage: 'test1.jpg',
+                ocrPrimitive: '{"textResults": [{"text": "患者姓名：张三"}]}',
+                workspaceId: 1 // 使用存在的workspaceId
+            });
+
+            // 设置 mock 返回成功结果
+            const mockLabReportData = {
+                ocrdataId: testOcrData.id,
+                patient: '张三',
+                reportTime: new Date().toISOString(),
+                doctor: '李医生',
+                reportImage: 'test1.jpg',
+                hospital: '测试医院',
+                workspaceId: 1, // 使用存在的workspaceId
+                items: [
+                    {
+                        itemName: '血常规',
+                        result: '7.65',
+                        unit: '10^9/L',
+                        referenceValue: '3.5-9.5'
+                    }
+                ]
+            };
+            
+            mockAiProcessor.processOcrDataList.mockResolvedValue([mockLabReportData]);
+            
+            const delay = await ocrProcessor.runTask(5);
+            
+            expect(delay).toBe(TEST_CONFIG.OCR_PROCESSOR_DELAY); // 处理成功，返回配置的延时
+            
+            // 验证 getUserIdFromLabReport 被调用
+            expect(getUserIdFromLabReport).toHaveBeenCalledTimes(1);
+            
+            // 验证 WebSocket 通知没有被调用（因为getUserIdFromLabReport返回null）
+            expect(mockWsServer.sendMsgToUser).not.toHaveBeenCalled();
+        });
+
+        test('WebSocket发送失败时不影响OCR处理流程', async () => {
+            // 创建测试 OCR 数据
+            const testOcrData = await OcrData.create({
+                reportImage: 'test1.jpg',
+                ocrPrimitive: '{"textResults": [{"text": "患者姓名：张三"}]}',
+                workspaceId: 1
+            });
+
+            // 设置 mock 返回成功结果
+            const mockLabReportData = {
+                ocrdataId: testOcrData.id,
+                patient: '张三',
+                reportTime: new Date().toISOString(),
+                doctor: '李医生',
+                reportImage: 'test1.jpg',
+                hospital: '测试医院',
+                workspaceId: 1,
+                items: [
+                    {
+                        itemName: '血常规',
+                        result: '7.65',
+                        unit: '10^9/L',
+                        referenceValue: '3.5-9.5'
+                    }
+                ]
+            };
+            
+            mockAiProcessor.processOcrDataList.mockResolvedValue([mockLabReportData]);
+            
+            // 设置 WebSocket 发送失败
+            mockWsServer.sendMsgToUser.mockReturnValue(false);
+            
+            const delay = await ocrProcessor.runTask(5);
+            
+            expect(delay).toBe(TEST_CONFIG.OCR_PROCESSOR_DELAY);
+            
+            // 验证 WebSocket 通知被调用
+            expect(mockWsServer.sendMsgToUser).toHaveBeenCalledTimes(1);
+            
+            // 验证 OCR 数据仍然被正确处理
+            const exists = await OcrData.checkExists(testOcrData.id);
+            expect(exists).toBe(false);
+            
+            // 验证 LabReport 仍然被创建
+            const labReports = await LabReport.findByWorkspaceId(1);
+            expect(labReports).toHaveLength(1);
         });
     });
 }); 

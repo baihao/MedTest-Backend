@@ -89,6 +89,48 @@ console.log(`已强制关闭用户 ${userId} 的 ${forceClosedCount} 个会话`)
 const remainingSessions = wsServer.getUserSessions(userId);
 console.log(`用户 ${userId} 剩余会话数: ${remainingSessions.length}`);
 
+// 实际应用示例：OCR处理完成后通知用户
+console.log('\n=== OCR处理完成通知示例 ===');
+
+const { getUserIdFromLabReport } = require('../config/utils');
+
+async function notifyUserAfterOcrProcessing(labReportId) {
+    try {
+        // 1. 根据LabReport ID获取用户ID
+        const userId = await getUserIdFromLabReport(labReportId);
+        
+        if (!userId) {
+            console.log(`无法找到LabReport ${labReportId} 对应的用户`);
+            return false;
+        }
+        
+        // 2. 通过WebSocket向用户发送通知
+        const notification = {
+            type: 'ocr_completed',
+            labReportId: labReportId,
+            message: '您的检验报告OCR处理已完成',
+            timestamp: new Date().toISOString(),
+            status: 'success'
+        };
+        
+        const success = wsServer.sendMsgToUser(userId, notification);
+        
+        if (success) {
+            console.log(`已向用户 ${userId} 发送OCR完成通知`);
+            return true;
+        } else {
+            console.log(`用户 ${userId} 当前没有活跃连接`);
+            return false;
+        }
+    } catch (error) {
+        console.error('发送OCR完成通知失败:', error);
+        return false;
+    }
+}
+
+// 模拟OCR处理完成后的通知
+// notifyUserAfterOcrProcessing(123);
+
 module.exports = {
     wsServer,
     generateToken,

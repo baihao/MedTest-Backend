@@ -389,11 +389,84 @@ describe('WebSocket Server Tests', () => {
             const nonExistentUserId = 999999;
             const testMessage = {
                 type: 'test_message',
-                content: 'This should fail'
+                content: 'This should not be sent'
             };
             const result = wsServer.sendMsgToUser(nonExistentUserId, testMessage);
             expect(result).toBe(false);
         });
+
+        test('发送空消息', (done) => {
+            User.create('test_user_empty_msg', 'testpassword123').then(testUser => {
+                const userId = testUser.id;
+                const token = jwt.sign({ userId }, jwtSecret);
+                
+                const ws = new WebSocket(`ws://localhost:${port}/ws?token=${token}`);
+                let authSuccess = false;
+                
+                ws.on('message', (data) => {
+                    const message = JSON.parse(data);
+                    if (message.type === 'auth_success') {
+                        authSuccess = true;
+                        // 发送空消息
+                        const result = wsServer.sendMsgToUser(userId, {});
+                        expect(result).toBe(true);
+                        
+                        // 等待一小段时间后关闭连接
+                        setTimeout(() => {
+                            ws.close();
+                            User.delete(userId).then(() => done());
+                        }, 100);
+                    }
+                });
+                
+                // 设置超时
+                setTimeout(() => {
+                    if (!authSuccess) {
+                        ws.close();
+                        User.delete(userId).then(() => done(new Error('认证超时')));
+                    }
+                }, 5000);
+            });
+        }, 10000);
+
+        test('发送null消息', (done) => {
+            User.create('test_user_null_msg', 'testpassword123').then(testUser => {
+                const userId = testUser.id;
+                const token = jwt.sign({ userId }, jwtSecret);
+                
+                const ws = new WebSocket(`ws://localhost:${port}/ws?token=${token}`);
+                let authSuccess = false;
+                let nullMessageReceived = false;
+                
+                ws.on('message', (data) => {
+                    const message = JSON.parse(data);
+                    if (message && message.type === 'auth_success') {
+                        authSuccess = true;
+                        // 发送null消息
+                        const result = wsServer.sendMsgToUser(userId, null);
+                        expect(result).toBe(true);
+                    } else if (message === null) {
+                        nullMessageReceived = true;
+                        // 等待一小段时间后关闭连接
+                        setTimeout(() => {
+                            ws.close();
+                            User.delete(userId).then(() => done());
+                        }, 100);
+                    }
+                });
+                
+                // 设置超时
+                setTimeout(() => {
+                    if (!authSuccess) {
+                        ws.close();
+                        User.delete(userId).then(() => done(new Error('认证超时')));
+                    } else if (!nullMessageReceived) {
+                        ws.close();
+                        User.delete(userId).then(() => done(new Error('未收到null消息')));
+                    }
+                }, 5000);
+            });
+        }, 10000);
 
         test('向多个连接的用户发送消息', (done) => {
             User.create('test_user_6', 'testpassword123').then(testUser => {
