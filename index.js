@@ -6,10 +6,13 @@ const workspaceRoutes = require('./routes/workspace');
 const labreportRoutes = require('./routes/labreport');
 const ocrdataRoutes = require('./routes/ocrdata');
 const { errorHandler } = require('./config/midware');
-const { logger } = require('./config/logger'); 
+const { logger } = require('./config/logger');
+const WebSocketServer = require('./websocket/wsServer');
+const config = require('./config/config');
 
 const app = express();
 let server = null;
+let wsServer = null;
 
 app.use(express.json());
 app.use('/login', loginRoutes);
@@ -28,12 +31,21 @@ async function startServer() {
         
         const PORT = process.env.PORT || 3000;
         server = app.listen(PORT, () => {
-            logger.info(`服务器运行在端口 ${PORT}`);
+            logger.info(`HTTP服务器运行在端口 ${PORT}`);
         });
+        
+        // 启动WebSocket服务器
+        wsServer = new WebSocketServer(server, {
+            port: config.WS_SERVER_PORT
+        });
+        logger.info(`WebSocket服务器运行在端口 ${config.WS_SERVER_PORT}`);
         
         // 优雅关闭
         process.on('SIGTERM', async () => {
             logger.info('收到SIGTERM信号，正在关闭服务器...');
+            if (wsServer) {
+                wsServer.close();
+            }
             if (server) {
                 server.close(async () => {
                     await ModelManager.close();
@@ -44,6 +56,9 @@ async function startServer() {
         
         process.on('SIGINT', async () => {
             logger.info('收到SIGINT信号，正在关闭服务器...');
+            if (wsServer) {
+                wsServer.close();
+            }
             if (server) {
                 server.close(async () => {
                     await ModelManager.close();
@@ -63,4 +78,4 @@ if (process.env.NODE_ENV !== 'test') {
     startServer();
 }
 
-module.exports = { app, server };
+module.exports = { app, server, wsServer };

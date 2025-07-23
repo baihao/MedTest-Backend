@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const { SECRET_KEY } = require('./config');
 const { Workspace } = require('../models/workspace');
 const { logger } = require('./logger');
+const { verifyJWT } = require('./utils');
 
 // 脱敏body中的password
 function maskPassword(obj) {
@@ -28,28 +29,13 @@ function authenticateJWT(req, res, next) {
         token = authHeader.trim();
     }
 
-    // token为空或全是空格，直接返回401
-    if (!token) {
-        return res.status(401).json({ error: '无效的token格式' });
+    // 使用工具函数统一验证
+    const result = verifyJWT(token, SECRET_KEY);
+    if (!result.valid) {
+        return res.status(result.code).json({ error: result.error });
     }
-    // token不是有效的JWT格式（例如只有Bearer或Bearer+空格），直接返回401
-    if (!/^([A-Za-z0-9-_]+\.){2}[A-Za-z0-9-_]+$/.test(token)) {
-        return res.status(401).json({ error: '无效的token格式' });
-    }
-
-    jwt.verify(token, SECRET_KEY, (err, user) => {
-        if (err) {
-            if (err.name === 'TokenExpiredError') {
-                return res.status(401).json({ error: 'token已过期' });
-            } else if (err.name === 'JsonWebTokenError') {
-                return res.status(403).json({ error: '无效token' });
-            } else {
-                return res.status(403).json({ error: 'token验证失败' });
-            }
-        }
-        req.user = user;
-        next();
-    });
+    req.user = result.payload;
+    next();
 }
 
 // Workspace权限检查中间件
