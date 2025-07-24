@@ -80,8 +80,8 @@ describe('OcrProcessor E2E Tests', () => {
         // 替换 AiProcessor 构造函数
         AiProcessor.mockImplementation(() => mockAiProcessor);
         
-        // 创建 OcrProcessor 实例，传入 mockWsServer
-        ocrProcessor = new OcrProcessor(mockWsServer);
+        // 创建 OcrProcessor 实例，传入 mockWsServer 和 mockAiProcessor
+        ocrProcessor = new OcrProcessor(mockWsServer, mockAiProcessor);
     });
 
     afterEach(async () => {

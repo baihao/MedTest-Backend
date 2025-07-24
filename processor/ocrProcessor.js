@@ -6,9 +6,9 @@ const config = require('../config/config');
 const { getUserIdFromLabReport } = require('../config/utils');
 
 class OcrProcessor {
-    constructor(wsServer = null) {
+    constructor(wsServer = null, aiProcessor = null) {
         this.isProcessing = false;
-        this.aiProcessor = new AiProcessor();
+        this.aiProcessor = aiProcessor || new AiProcessor();
         this.wsServer = wsServer;
     }
 

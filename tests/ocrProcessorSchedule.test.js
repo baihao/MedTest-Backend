@@ -61,8 +61,8 @@ describe('OCR Processor Schedule Tests', () => {
         // 替换 AiProcessor 构造函数
         AiProcessor.mockImplementation(() => mockAiProcessor);
         
-        // 创建 OcrProcessor 实例，传入 mockWsServer
-        ocrProcessor = new OcrProcessor(); // 可根据需要传入 mockWsServer
+        // 创建 OcrProcessor 实例，传入 mockAiProcessor
+        ocrProcessor = new OcrProcessor(undefined, mockAiProcessor);
         
         // 创建 Scheduler 实例
         scheduler = new Scheduler();
@@ -331,8 +331,8 @@ describe('OCR Processor Schedule Tests', () => {
             // 创建两个调度器和对应的OCR处理器
             const scheduler1 = new Scheduler();
             const scheduler2 = new Scheduler();
-            const ocrProcessor1 = new OcrProcessor(); // 可根据需要传入 mockWsServer
-            const ocrProcessor2 = new OcrProcessor(); // 可根据需要传入 mockWsServer
+            const ocrProcessor1 = new OcrProcessor(undefined, mockAiProcessor); // 可根据需要传入 mockWsServer
+            const ocrProcessor2 = new OcrProcessor(undefined, mockAiProcessor); // 可根据需要传入 mockWsServer
             
             const task1 = async () => {
                 return await ocrProcessor1.runTask(3);

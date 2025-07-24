@@ -27,6 +27,7 @@ const { OcrProcessor } = require('../processor/ocrProcessor');
 const fs = require('fs');
 const path = require('path');
 const WebSocketServer = require('../websocket/wsServer');
+const { ModelManager } = require('../models/modelmgr');
 
 const PORT = config.SERVER_PORT;
 
@@ -41,12 +42,8 @@ describe('完整工作流程 E2E 测试', () => {
     let aiProcessor;
 
     beforeAll(async () => {
-        // 初始化所有模型
-        await User.init();
-        await Workspace.init();
-        await OcrData.init();
-        await LabReport.init();
-        await LabReportItem.init();
+        // 统一初始化所有模型
+        await ModelManager.init();
 
         // 启动测试服务器
         testServer = app.listen(PORT, () => {
@@ -59,9 +56,9 @@ describe('完整工作流程 E2E 测试', () => {
         if (testServer && typeof testServer.address === 'function') {
             console.log('[E2E] testServer.address():', testServer.address());
         }
-        // 初始化AI处理器和OCR处理器，OcrProcessor传入wsServer
+        // 初始化AI处理器和OCR处理器，OcrProcessor传入wsServer和aiProcessor
         aiProcessor = new AiProcessor();
-        ocrProcessor = new OcrProcessor(wsServer);
+        ocrProcessor = new OcrProcessor(wsServer, aiProcessor);
     });
 
     beforeEach(async () => {
@@ -104,9 +101,18 @@ describe('完整工作流程 E2E 测试', () => {
     });
 
     afterAll(async () => {
-        // 关闭测试服务器
+        // 关闭测试服务器和websocket连接
         if (testServer) {
             await new Promise(resolve => testServer.close(resolve));
+            testServer = null;
+        }
+        if (wsClient) {
+            wsClient.close();
+            wsClient = null;
+        }
+        if (wsServer) {
+            wsServer.close();
+            wsServer = null;
         }
     });
 
@@ -440,6 +446,9 @@ describe('完整工作流程 E2E 测试', () => {
 
             // 补查数据库
             const updatedItem = await LabReportItem.findById(labReportItem.id);
+            expect(updatedItem.result).toBe('异常');
+            expect(updatedItem.unit).toBe('mg/dL');
+            expect(updatedItem.referenceValue).toBe('4.0-10.0');
             console.log('labReportItem after update', updatedItem);
 
             console.log('✅ 成功更新检验报告项目');
@@ -497,17 +506,11 @@ describe('完整工作流程 E2E 测试', () => {
                 })
                 .expect(200);
 
-            // 兼容对象或数组返回
-            let labReports7;
-            if (Array.isArray(searchResponse.body)) {
-                labReports7 = searchResponse.body;
-            } else if (searchResponse.body && Array.isArray(searchResponse.body.labReports)) {
-                labReports7 = searchResponse.body.labReports;
-            } else if (searchResponse.body && Array.isArray(searchResponse.body.reports)) {
-                labReports7 = searchResponse.body.reports;
-            } else {
+            // 明确只接受对象格式，且必须有reports和pagination字段
+            if (!searchResponse.body || !Array.isArray(searchResponse.body.reports) || typeof searchResponse.body.pagination !== 'object') {
                 throw new Error('API返回格式不正确: ' + JSON.stringify(searchResponse.body));
             }
+            const labReports7 = searchResponse.body.reports;
             expect(labReports7.length).toBeGreaterThan(0);
 
             const foundReport = labReports7.find(report => report.patient === '张三');
@@ -643,17 +646,11 @@ describe('完整工作流程 E2E 测试', () => {
                     pageSize: 10
                 });
 
-            // 兼容对象或数组返回
-            let labReports7;
-            if (Array.isArray(searchResponse.body)) {
-                labReports7 = searchResponse.body;
-            } else if (searchResponse.body && Array.isArray(searchResponse.body.labReports)) {
-                labReports7 = searchResponse.body.labReports;
-            } else if (searchResponse.body && Array.isArray(searchResponse.body.reports)) {
-                labReports7 = searchResponse.body.reports;
-            } else {
+            // 明确只接受对象格式，且必须有reports和pagination字段
+            if (!searchResponse.body || !Array.isArray(searchResponse.body.reports) || typeof searchResponse.body.pagination !== 'object') {
                 throw new Error('API返回格式不正确: ' + JSON.stringify(searchResponse.body));
             }
+            const labReports7 = searchResponse.body.reports;
             expect(labReports7.length).toBeGreaterThan(0);
 
             const foundReport = labReports7.find(r => r.patient === reportData.patient);
@@ -663,10 +660,8 @@ describe('完整工作流程 E2E 测试', () => {
             if (foundItem) {
                 expect(foundItem.result).toBe('异常');
                 expect(foundItem.unit).toBe('mg/dL');
-                console.log(`✅ 步骤7完成 - 验证成功: ${foundItem.itemName} = ${foundItem.result}`);
-            } else {
-                console.log('✅ 步骤7完成 - 验证成功: 找不到检验项目，items为空或未返回');
             }
+
             console.log('\n🎉 完整工作流程测试成功完成！');
         }, 60000); // 设置60秒超时
     });

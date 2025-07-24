@@ -10,10 +10,14 @@ const { errorHandler } = require('./config/midware');
 const { logger } = require('./config/logger');
 const WebSocketServer = require('./websocket/wsServer');
 const config = require('./config/config');
+const Scheduler = require('./processor/scheduler');
+const { OcrProcessor } = require('./processor/ocrProcessor');
 
 const app = express();
 let server = null;
 let wsServer = null;
+let scheduler = null;
+let ocrProcessor = null;
 
 app.use(express.json());
 app.use('/login', loginRoutes);
@@ -22,6 +26,25 @@ app.use('/labreport', labreportRoutes);
 app.use('/labreportitem', labreportitemRoutes);
 app.use('/ocrdata', ocrdataRoutes);
 app.use(errorHandler);
+
+// 健康检查和服务状态测试路由
+app.get('/health/test', (req, res) => {
+    let wsStatus = null;
+    if (wsServer) {
+        wsStatus = {
+            exists: true,
+            activeConnections: typeof wsServer.getActiveConnectionCount === 'function'
+                ? wsServer.getActiveConnectionCount()
+                : (wsServer.sessions ? wsServer.sessions.size : undefined)
+        };
+    }
+    res.json({
+        status: 'ok',
+        scheduler: scheduler ? scheduler.getStatus() : null,
+        ocrProcessor: ocrProcessor ? ocrProcessor.getStatus() : null,
+        wsServer: wsStatus
+    });
+});
 
 // 初始化数据库和模型
 async function startServer() {
@@ -38,6 +61,12 @@ async function startServer() {
         // 启动WebSocket服务器，复用同一个端口
         wsServer = new WebSocketServer(server);
         logger.info(`WebSocket服务器复用HTTP端口 ${PORT}`);
+
+        // 启动OCR处理服务调度器
+        ocrProcessor = new OcrProcessor(wsServer);
+        scheduler = new Scheduler();
+        await scheduler.startSchedule(() => ocrProcessor.runTask(), 0);
+        logger.info('OCR处理服务调度器已启动');
         
         // 优雅关闭
         process.on('SIGTERM', async () => {
