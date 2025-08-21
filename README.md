@@ -186,10 +186,12 @@ npm start
     "reportImage": "img1.png",
     "hospital": "市医院",
     "workspaceId": 1,
+    "ocrdataId": 201,
     "createdAt": "2024-07-24T10:01:00.000Z",
     "updatedAt": "2024-07-24T10:01:00.000Z"
   }
 ]
+```
 ```
 
 #### GET `/labreport/workspace/{workspaceId}/paginated?page=1&pageSize=2`
@@ -207,10 +209,12 @@ npm start
       "reportImage": "img1.png",
       "hospital": "市医院",
       "workspaceId": 1,
+      "ocrdataId": 201,
       "createdAt": "2024-07-24T10:01:00.000Z",
       "updatedAt": "2024-07-24T10:01:00.000Z"
     }
   ],
+```
   "pagination": {
     "currentPage": 1,
     "pageSize": 2,
@@ -235,8 +239,10 @@ npm start
   "reportImage": "img1.png",
   "hospital": "市医院",
   "workspaceId": 1,
+  "ocrdataId": 201,
   "createdAt": "2024-07-24T10:01:00.000Z",
   "updatedAt": "2024-07-24T10:01:00.000Z",
+```
   "items": [
     {
       "id": 100,
@@ -274,8 +280,10 @@ npm start
   "id": 10,
   "patient": "张三",
   "doctor": "王医生",
+  "ocrdataId": 201,
   ...
 }
+```
 ```
 
 #### DELETE `/labreport/{labReportId}`
@@ -343,9 +351,66 @@ npm start
   "reportTime": "2024-07-24T10:00:00.000Z",
   "doctor": "李医生",
   "workspaceId": 1,
+  "ocrdataId": 202,
   "items": [ ... ]
 }
 ```
+```
+
+#### POST `/labreport/workspace/{workspaceId}/by-ocrdata`
+**请求头：** `Authorization: Bearer <token>`
+**参数说明：** `{workspaceId}` - 工作空间ID（数字），根据一组ocrdataId批量查询已处理的实验室报告
+**请求体：**
+```json
+{
+  "ocrdataIds": [201, 202, 203]
+}
+```
+**正常返回：**
+```json
+[
+  {
+    "id": 10,
+    "patient": "张三",
+    "reportTime": "2024-07-24T10:00:00.000Z",
+    "doctor": "李医生",
+    "reportImage": "img1.png",
+    "hospital": "市医院",
+    "workspaceId": 1,
+    "ocrdataId": 201,
+    "createdAt": "2024-07-24T10:01:00.000Z",
+    "updatedAt": "2024-07-24T10:01:00.000Z"
+  },
+  {
+    "id": 11,
+    "patient": "李四",
+    "reportTime": "2024-07-24T11:00:00.000Z",
+    "doctor": "王医生",
+    "reportImage": "img2.png",
+    "hospital": "省医院",
+    "workspaceId": 1,
+    "ocrdataId": 202,
+    "createdAt": "2024-07-24T11:01:00.000Z",
+    "updatedAt": "2024-07-24T11:01:00.000Z"
+  }
+]
+```
+**异常返回：**
+- 400
+  ```json
+  { "error": "ocrdataIds参数是必需的且必须是数组" }
+  ```
+  ```json
+  { "error": "ocrdataIds数组不能为空" }
+  ```
+- 404
+  ```json
+  { "error": "工作空间不存在" }
+  ```
+- 403
+  ```json
+  { "error": "无权访问此工作空间" }
+  ```
 
 ---
 
