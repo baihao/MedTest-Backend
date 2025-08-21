@@ -383,6 +383,7 @@ describe('AiProcessor E2E Tests', () => {
                     "doctor": "苏会娜",
                     "reportImage": "test2.jpg",
                     "hospital": "北京大学人民医院",
+                    "ocrdataId": 1,
                     "workspaceId": 1,
                     "items": [
                         {
@@ -409,7 +410,7 @@ describe('AiProcessor E2E Tests', () => {
         });
 
         test('should handle AI response with markdown code blocks', () => {
-            const responseWithMarkdown = '```json\n[{"patient":"张三","reportTime":"2025-01-15T11:30:00.000Z","reportImage":"test.jpg","workspaceId":1,"items":[]}]\n```';
+            const responseWithMarkdown = '```json\n[{"patient":"张三","reportTime":"2025-01-15T11:30:00.000Z","reportImage":"test.jpg","workspaceId":1,"ocrdataId":1,"items":[]}]\n```';
             
             const result = aiProcessor.parseAiResponse(responseWithMarkdown);
             
@@ -442,6 +443,8 @@ describe('AiProcessor E2E Tests', () => {
                 patient: '张三',
                 reportTime: '2025-01-15T11:30:00.000Z',
                 reportImage: 'test3.jpg',
+                ocrdataId: 1,
+                workspaceId: 1,
                 items: [
                     {
                         itemName: '血糖',
@@ -458,6 +461,8 @@ describe('AiProcessor E2E Tests', () => {
         test('should throw error for missing required fields', () => {
             const invalidInstance = {
                 patient: '张三',
+                ocrdataId: 1,
+                workspaceId: 1
                 // 缺少 reportTime, reportImage, items
             };
             
@@ -471,6 +476,8 @@ describe('AiProcessor E2E Tests', () => {
                 patient: '张三',
                 reportTime: '2025-01-15T11:30:00.000Z',
                 reportImage: 'test3.jpg',
+                ocrdataId: 1,
+                workspaceId: 1,
                 items: 'not an array'
             };
             
@@ -484,6 +491,8 @@ describe('AiProcessor E2E Tests', () => {
                 patient: '张三',
                 reportTime: '2025-01-15T11:30:00.000Z',
                 reportImage: 'test3.jpg',
+                ocrdataId: 1,
+                workspaceId: 1,
                 items: [
                     {
                         itemName: '血糖'

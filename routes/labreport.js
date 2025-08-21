@@ -237,4 +237,33 @@ router.post('/', authenticateJWT, async (req, res, next) => {
     }
 });
 
+// 8. 根据某个workspace的一组 ocrdataId 批量查询这些是否已生成对应的labreports
+router.post('/workspace/:workspaceId/by-ocrdata', authenticateJWT, async (req, res, next) => {
+    try {
+        const { workspaceId } = req.params;
+        const { ocrdataIds } = req.body;
+
+        // 参数校验
+        if (!ocrdataIds || !Array.isArray(ocrdataIds) || ocrdataIds.length === 0) {
+            return res.status(400).json({ error: 'ocrdataIds必须是非空数组' });
+        }
+
+        // 验证工作空间权限
+        const workspace = await Workspace.findById(workspaceId);
+        if (!workspace) {
+            return res.status(404).json({ error: '工作空间不存在' });
+        }
+        
+        if (Number(workspace.userId) !== Number(req.user.id)) {
+            return res.status(403).json({ error: '无权访问此工作空间' });
+        }
+
+        const labReports = await LabReport.findByOcrdataIds(ocrdataIds, workspaceId);
+        // 仅返回已处理生成的labreports，未处理的忽略
+        return res.json(labReports);
+    } catch (error) {
+        next(error);
+    }
+});
+
 module.exports = router; 

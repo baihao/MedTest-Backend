@@ -164,6 +164,7 @@ Return a JSON array where each element represents one lab report with the follow
     "reportImage": "test1.jpg",
     "hospital": "医院名称",
     "workspaceId": null,
+    "ocrdataId": null,
     "items": [
       {
         "itemName": "白细胞计数",
@@ -247,7 +248,7 @@ OCR data list: ${ocrDataListStr}`;
      * @param {number} index - 实例索引
      */
     validateLabReportInstance(instance, index) {
-        const requiredFields = ['patient', 'reportTime', 'reportImage', 'items'];
+        const requiredFields = ['patient', 'reportTime', 'reportImage', 'items', 'ocrdataId', 'workspaceId'];
         const missingFields = requiredFields.filter(field => !instance.hasOwnProperty(field));
         
         if (missingFields.length > 0) {

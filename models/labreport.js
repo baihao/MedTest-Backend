@@ -12,7 +12,7 @@ class LabReportError extends Error {
 }
 
 class LabReport {
-    constructor({ id, patient, reportTime, doctor, reportImage, hospital, workspaceId, createdAt, updatedAt }) {
+    constructor({ id, patient, reportTime, doctor, reportImage, hospital, workspaceId, ocrdataId, createdAt, updatedAt }) {
         this.id = id;
         this.patient = patient;
         this.reportTime = reportTime;
@@ -20,6 +20,7 @@ class LabReport {
         this.reportImage = reportImage;
         this.hospital = hospital;
         this.workspaceId = workspaceId;
+        this.ocrdataId = ocrdataId || null;
         this.createdAt = createdAt || new Date();
         this.updatedAt = updatedAt || new Date();
     }
@@ -71,6 +72,21 @@ class LabReport {
                     len: [0, 200] // 修改验证规则，允许空字符串
                 }
             },
+            ocrdataId: {
+                type: DataTypes.INTEGER,
+                allowNull: true,
+                field: 'ocrdata_id',
+                references: {
+                    model: 'ocr_data',
+                    key: 'id'
+                },
+                onUpdate: 'CASCADE',
+                onDelete: 'SET NULL',
+                validate: {
+                    isInt: true,
+                    min: 1
+                }
+            },
             workspaceId: {
                 type: DataTypes.INTEGER,
                 allowNull: false,
@@ -101,6 +117,9 @@ class LabReport {
                 },
                 {
                     fields: ['doctor']
+                },
+                {
+                    fields: ['ocrdata_id']
                 }
             ]
         });
@@ -108,7 +127,7 @@ class LabReport {
 
     // 数据验证方法
     static validateLabReportData(labReportData) {
-        const { patient, reportTime, doctor, reportImage, hospital, workspaceId } = labReportData;
+        const { patient, reportTime, doctor, reportImage, hospital, workspaceId, ocrdataId } = labReportData;
         
         if (!patient || typeof patient !== 'string') {
             throw new LabReportError('患者姓名是必需的且必须是字符串');
@@ -167,6 +186,12 @@ class LabReport {
         if (!workspaceId || isNaN(Number(workspaceId)) || Number(workspaceId) < 1) {
             throw new LabReportError('工作空间ID是必需的且必须是正整数');
         }
+
+        if (ocrdataId !== undefined && ocrdataId !== null) {
+            if (isNaN(Number(ocrdataId)) || Number(ocrdataId) < 1) {
+                throw new LabReportError('ocrdataId必须是正整数');
+            }
+        }
     }
 
     // 创建检验报告
@@ -191,14 +216,18 @@ class LabReport {
             }
             
             // 创建检验报告
-            const dbLabReport = await this.model.create({
+            const createValues = {
                 patient: labReportData.patient,
                 reportTime: new Date(labReportData.reportTime),
                 doctor: labReportData.doctor || null, // 允许为空
                 reportImage: labReportData.reportImage || null,
                 hospital: labReportData.hospital || null, // 允许为空
                 workspaceId: workspaceId
-            });
+            };
+            if (labReportData.ocrdataId !== undefined) {
+                createValues.ocrdataId = labReportData.ocrdataId || null;
+            }
+            const dbLabReport = await this.model.create(createValues);
 
             const labReport = new LabReport(dbLabReport.toJSON());
 
@@ -616,14 +645,18 @@ class LabReport {
                     throw new LabReportError('指定的工作空间不存在', 404);
                 }
                 
-                const dbLabReport = await this.model.create({
+                const createValues = {
                     patient: labReportData.patient,
                     reportTime: new Date(labReportData.reportTime),
                     doctor: labReportData.doctor || null, // 允许为空
                     reportImage: labReportData.reportImage || null,
                     hospital: labReportData.hospital || null, // 允许为空
                     workspaceId: Number(labReportData.workspaceId)
-                }, { transaction });
+                };
+                if (labReportData.ocrdataId !== undefined) {
+                    createValues.ocrdataId = labReportData.ocrdataId || null;
+                }
+                const dbLabReport = await this.model.create(createValues, { transaction });
 
                 const labReport = new LabReport(dbLabReport.toJSON());
 
@@ -671,6 +704,43 @@ class LabReport {
                 throw error;
             }
             throw new LabReportError(`统计工作空间检验报告失败: ${error.message}`);
+        }
+    }
+
+    // 根据一组 ocrdataId 查询已处理的检验报告（可按工作空间过滤）
+    static async findByOcrdataIds(ocrdataIds, workspaceId = null) {
+        try {
+            if (!ocrdataIds || !Array.isArray(ocrdataIds) || ocrdataIds.length === 0) {
+                throw new LabReportError('ocrdataId列表是必需的且不能为空');
+            }
+
+            const numericIds = ocrdataIds
+                .map(id => Number(id))
+                .filter(id => !isNaN(id) && id > 0);
+
+            if (numericIds.length === 0) {
+                throw new LabReportError('ocrdataId列表必须包含有效的正整数');
+            }
+
+            const whereClause = { ocrdataId: { [Op.in]: numericIds } };
+            if (workspaceId !== null && workspaceId !== undefined) {
+                if (isNaN(Number(workspaceId)) || Number(workspaceId) < 1) {
+                    throw new LabReportError('工作空间ID参数无效');
+                }
+                whereClause.workspaceId = Number(workspaceId);
+            }
+
+            const rows = await this.model.findAll({
+                where: whereClause,
+                order: [['reportTime', 'DESC'], ['createdAt', 'DESC']]
+            });
+
+            return rows.map(r => new LabReport(r.toJSON()));
+        } catch (error) {
+            if (error instanceof LabReportError) {
+                throw error;
+            }
+            throw new LabReportError(`根据ocrdataId列表查询检验报告失败: ${error.message}`);
         }
     }
 }

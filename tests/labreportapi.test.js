@@ -3,6 +3,7 @@ const { app } = require('../index');
 const { User } = require('../models/user');
 const { Workspace } = require('../models/workspace');
 const { LabReport } = require('../models/labreport');
+const { OcrData } = require('../models/ocrdata');
 const { LabReportItem } = require('../models/labreportitem');
 const jwt = require('jsonwebtoken');
 const config = require('../config/config');
@@ -532,6 +533,114 @@ describe('LabReport API Router Tests', () => {
                 .delete('/labreport/99999')
                 .set('Authorization', `Bearer ${authToken}`)
                 .expect(404);
+        });
+    });
+
+    describe("POST /labreport/workspace/:workspaceId/by-ocrdata - 通过ocrdataIds批量查询已处理报告", () => {
+        it('应该返回匹配的labreports并忽略未处理的ocrdataIds', async () => {
+            // 先创建对应的 OcrData 以满足外键约束
+            const o1 = await OcrData.create({
+                reportImage: 'img101.png',
+                ocrPrimitive: '[]',
+                workspaceId: testWorkspace.id
+            });
+            const o2 = await OcrData.create({
+                reportImage: 'img102.png',
+                ocrPrimitive: '[]',
+                workspaceId: testWorkspace.id
+            });
+
+            // 创建带有 ocrdataId 的检验报告
+            const r1 = await LabReport.createWithItems({
+                patient: '王一',
+                reportTime: new Date(),
+                doctor: '医生A',
+                hospital: '医院A',
+                workspaceId: testWorkspace.id,
+                ocrdataId: o1.id,
+                items: [
+                    { itemName: '血常规', result: '正常', unit: 'g/L', referenceValue: '3.5-5.5' }
+                ]
+            });
+            const r2 = await LabReport.createWithItems({
+                patient: '王二',
+                reportTime: new Date(),
+                doctor: '医生B',
+                hospital: '医院B',
+                workspaceId: testWorkspace.id,
+                ocrdataId: o2.id,
+                items: []
+            });
+
+            const payload = { ocrdataIds: [o1.id, o2.id, 999999] }; // 999999 未处理
+
+            const response = await request(server)
+                .post(`/labreport/workspace/${testWorkspace.id}/by-ocrdata`)
+                .set('Authorization', `Bearer ${authToken}`)
+                .send(payload)
+                .expect(200);
+
+            expect(Array.isArray(response.body)).toBe(true);
+            // 只返回已处理的两个
+            expect(response.body.length).toBe(2);
+            const returnedOcrIds = response.body.map(r => r.ocrdataId).sort();
+            expect(returnedOcrIds).toEqual([o1.id, o2.id]);
+            const returnedPatients = response.body.map(r => r.patient);
+            expect(returnedPatients).toContain('王一');
+            expect(returnedPatients).toContain('王二');
+        });
+
+        it('应该验证请求体中的 ocrdataIds 参数', async () => {
+            // 缺少 ocrdataIds
+            await request(server)
+                .post(`/labreport/workspace/${testWorkspace.id}/by-ocrdata`)
+                .set('Authorization', `Bearer ${authToken}`)
+                .send({})
+                .expect(400);
+
+            // 空数组
+            await request(server)
+                .post(`/labreport/workspace/${testWorkspace.id}/by-ocrdata`)
+                .set('Authorization', `Bearer ${authToken}`)
+                .send({ ocrdataIds: [] })
+                .expect(400);
+
+            // 非数组
+            await request(server)
+                .post(`/labreport/workspace/${testWorkspace.id}/by-ocrdata`)
+                .set('Authorization', `Bearer ${authToken}`)
+                .send({ ocrdataIds: 'not-an-array' })
+                .expect(400);
+        });
+
+        it('应该拒绝访问其他用户的工作空间', async () => {
+            // 另一个用户和工作空间
+            const otherUser = await User.create(generateUniqueUsername('otheruser'), 'password123');
+            const otherWorkspace = await Workspace.create({ name: 'Other WS', userId: otherUser.id });
+
+            // 在其他工作空间创建一个 OCR 和 报告
+            const otherOcr = await OcrData.create({
+                reportImage: 'img201.png',
+                ocrPrimitive: '[]',
+                workspaceId: otherWorkspace.id
+            });
+            await LabReport.createWithItems({
+                patient: '张小三',
+                reportTime: new Date(),
+                workspaceId: otherWorkspace.id,
+                ocrdataId: otherOcr.id
+            });
+
+            // 用当前用户访问他人工作空间
+            await request(server)
+                .post(`/labreport/workspace/${otherWorkspace.id}/by-ocrdata`)
+                .set('Authorization', `Bearer ${authToken}`)
+                .send({ ocrdataIds: [201] })
+                .expect(403);
+
+            // 清理
+            await Workspace.delete(otherWorkspace.id);
+            await User.delete(otherUser.id);
         });
     });
 }); 
