@@ -70,6 +70,94 @@ npm start
   { "error": "Invalid credentials" }
   ```
 
+#### GET `/login/checkToken`
+**参数说明：** 通过查询参数传递
+- `username` - 用户名（必需）
+- `token` - JWT令牌（必需）
+
+**正常返回：**
+```json
+{
+  "valid": true,
+  "username": "alice",
+  "expiresAt": 1698892488
+}
+```
+**异常返回：**
+- 400
+  ```json
+  { "error": "Username and token are required" }
+  ```
+- 401
+  ```json
+  { "error": "Token expired", "valid": false }
+  ```
+  ```json
+  { "error": "Invalid token", "valid": false }
+  ```
+  ```json
+  { "error": "Token username mismatch", "valid": false }
+  ```
+  ```json
+  { "error": "User not found", "valid": false }
+  ```
+
+**使用场景：** 验证本地缓存的用户名和令牌是否仍然有效，用于前端自动登录状态检查。
+
+**使用示例：**
+
+**请求示例：**
+```bash
+GET /login/checkToken?username=alice&token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwidXNlcm5hbWUiOiJhbGljZSIsImlhdCI6MTY5ODg4ODg4OCwiZXhwIjoxNjk4ODkyNDg4fQ.abc123...
+```
+
+**响应示例：**
+
+**成功响应 (200):**
+```json
+{
+  "valid": true,
+  "username": "alice",
+  "expiresAt": 1698892488
+}
+```
+
+**失败响应 (400):**
+```json
+{
+  "error": "Username and token are required"
+}
+```
+
+**失败响应 (401):**
+```json
+{
+  "error": "Token expired",
+  "valid": false
+}
+```
+
+```json
+{
+  "error": "Invalid token",
+  "valid": false
+}
+```
+
+```json
+{
+  "error": "Token username mismatch",
+  "valid": false
+}
+```
+
+```json
+{
+  "error": "User not found",
+  "valid": false
+}
+```
+
 ---
 
 ### 2. 工作空间 API
@@ -130,7 +218,7 @@ npm start
 
 #### GET `/workspace/{workspaceId}`
 **请求头：** `Authorization: Bearer <token>`
-**参数说明：** `{workspaceId}` - 工作空间ID（数字）
+**参数说明：** `{workspaceId}` - 工作空间ID（数字），获取单个工作空间详情
 **正常返回：**
 ```json
 {
@@ -139,6 +227,48 @@ npm start
   "userId": 1,
   "createdAt": "2024-07-24T12:00:00.000Z",
   "updatedAt": "2024-07-24T12:00:00.000Z"
+}
+```
+**异常返回：**
+- 404
+  ```json
+  { "error": "未找到对应workspace" }
+  ```
+- 403
+  ```json
+  { "error": "无权访问此workspace" }
+  ```
+
+#### GET `/workspace/{workspaceId}/patients`
+**请求头：** `Authorization: Bearer <token>`
+**参数说明：** `{workspaceId}` - 工作空间ID（数字），获取该工作空间下所有患者姓名
+**正常返回：**
+```json
+{
+  "workspaceId": 1,
+  "workspaceName": "我的工作空间",
+  "patients": ["张三", "李四", "王五"]
+}
+```
+**异常返回：**
+- 404
+  ```json
+  { "error": "未找到对应workspace" }
+  ```
+- 403
+  ```json
+  { "error": "无权访问此workspace" }
+  ```
+
+#### GET `/workspace/{workspaceId}/report-items`
+**请求头：** `Authorization: Bearer <token>`
+**参数说明：** `{workspaceId}` - 工作空间ID（数字），获取该工作空间下所有报告项目名称
+**正常返回：**
+```json
+{
+  "workspaceId": 1,
+  "workspaceName": "我的工作空间",
+  "reportItems": ["白细胞计数", "红细胞计数", "血红蛋白"]
 }
 ```
 **异常返回：**

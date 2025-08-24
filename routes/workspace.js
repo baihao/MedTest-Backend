@@ -79,4 +79,56 @@ router.get('/:id', authenticateJWT, async (req, res, next) => {
     }
 });
 
+// 获取工作空间下所有患者姓名
+router.get('/:id/patients', authenticateJWT, async (req, res, next) => {
+    try {
+        const workspace = await Workspace.findById(req.params.id);
+        if (!workspace) {
+            return res.status(404).json({ error: '未找到对应workspace' });
+        }
+        
+        if (Number(workspace.userId) !== Number(req.user.id)) {
+            return res.status(403).json({ error: '无权访问此workspace' });
+        }
+        
+        const { LabReport } = require('../models/labreport');
+        const patients = await LabReport.getPatientNamesByWorkspace(req.params.id);
+        
+        res.json({ 
+            workspaceId: Number(req.params.id),
+            workspaceName: workspace.name,
+            patients: patients 
+        });
+    } catch (error) {
+        // 直接传递给全局错误处理器
+        next(error);
+    }
+});
+
+// 获取工作空间下所有报告项目名称
+router.get('/:id/report-items', authenticateJWT, async (req, res, next) => {
+    try {
+        const workspace = await Workspace.findById(req.params.id);
+        if (!workspace) {
+            return res.status(404).json({ error: '未找到对应workspace' });
+        }
+        
+        if (Number(workspace.userId) !== Number(req.user.id)) {
+            return res.status(403).json({ error: '无权访问此workspace' });
+        }
+        
+        const { LabReportItem } = require('../models/labreportitem');
+        const reportItems = await LabReportItem.getItemNamesByWorkspace(req.params.id);
+        
+        res.json({ 
+            workspaceId: Number(req.params.id),
+            workspaceName: workspace.name,
+            reportItems: reportItems 
+        });
+    } catch (error) {
+        // 直接传递给全局错误处理器
+        next(error);
+    }
+});
+
 module.exports = router;

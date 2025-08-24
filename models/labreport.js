@@ -743,6 +743,29 @@ class LabReport {
             throw new LabReportError(`根据ocrdataId列表查询检验报告失败: ${error.message}`);
         }
     }
+
+    // 获取工作空间下所有患者姓名
+    static async getPatientNamesByWorkspace(workspaceId) {
+        try {
+            if (!workspaceId || isNaN(Number(workspaceId))) {
+                throw new LabReportError('工作空间ID参数无效');
+            }
+            
+            const rows = await this.model.findAll({
+                where: { workspaceId: Number(workspaceId) },
+                attributes: ['patient'],
+                group: ['patient'],
+                order: [['patient', 'ASC']]
+            });
+            
+            return rows.map(row => row.patient);
+        } catch (error) {
+            if (error instanceof LabReportError) {
+                throw error;
+            }
+            throw new LabReportError(`获取工作空间患者姓名失败: ${error.message}`);
+        }
+    }
 }
 
 module.exports = { LabReport, LabReportError }; 

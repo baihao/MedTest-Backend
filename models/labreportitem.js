@@ -419,6 +419,34 @@ class LabReportItem {
             throw new LabReportItemError(`批量创建检验报告项目失败: ${error.message}`);
         }
     }
+
+    // 获取工作空间下所有报告项目名称
+    static async getItemNamesByWorkspace(workspaceId) {
+        try {
+            if (!workspaceId || isNaN(Number(workspaceId))) {
+                throw new LabReportItemError('工作空间ID参数无效');
+            }
+            
+            const rows = await this.model.findAll({
+                include: [{
+                    model: sequelize.models.LabReport,
+                    as: 'labReport',
+                    where: { workspaceId: Number(workspaceId) },
+                    attributes: []
+                }],
+                attributes: ['itemName'],
+                group: ['itemName'],
+                order: [['itemName', 'ASC']]
+            });
+            
+            return rows.map(row => row.itemName);
+        } catch (error) {
+            if (error instanceof LabReportItemError) {
+                throw error;
+            }
+            throw new LabReportItemError(`获取工作空间报告项目名称失败: ${error.message}`);
+        }
+    }
 }
 
 module.exports = { LabReportItem, LabReportItemError }; 
